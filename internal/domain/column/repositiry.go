@@ -1,0 +1,23 @@
+package column
+
+import (
+	"context"
+	"errors"
+)
+
+var ErrNotFound = errors.New("column not found")
+
+// Repository - описываем, что домен ждет от хранилища колонок
+type Repository interface {
+	// Create - создание новой колонки
+	Create(ctx context.Context, c *Column) error
+
+	// ListByBoardID - Возвращаем все колонки доски, отсортированные по порядку.
+	ListByBoardID(ctx context.Context, boardID string) ([]Column, error)
+
+	// Update - Обновляем имя и позицию колонки.
+	Update(ctx context.Context, c *Column) error
+
+	// Delete - Удаляем колонку с доски.
+	Delete(ctx context.Context, id, boardID string) error
+}

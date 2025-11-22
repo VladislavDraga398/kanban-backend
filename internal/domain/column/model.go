@@ -3,7 +3,7 @@ package column
 import "time"
 
 // Column - Колонка на доске (Task) (Progress) (To do)
-type column struct {
+type Column struct {
 	ID        string // UUID колонки
 	BoardID   string // ID доски, к которой относится колонка
 	Name      string // Название колонки
