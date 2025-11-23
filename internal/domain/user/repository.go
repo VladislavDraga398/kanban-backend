@@ -5,17 +5,16 @@ import (
 	"errors"
 )
 
-// ErrNotFound - ошибка, если пользователь не найден
-var ErrNotFound = errors.New("user not found")
+var (
+	ErrNotFound         = errors.New("user not found")
+	ErrEmailAlreadyUsed = errors.New("email already in use")
+)
 
-// Repository - описываем, что домен ждет от хранилища пользователей
 type Repository interface {
 	// Create - создание нового пользователя
-	Create(ctx context.Context, user *User) error
-
-	// GetByID - Находим пользователя по ID
+	Create(ctx context.Context, u *User) error
+	// GetByID - получение пользователя по ID
 	GetByID(ctx context.Context, id string) (*User, error)
-
-	// GetByEmail - Находим пользователя по Email (Вместо логина)
+	// GetByEmail - получение пользователя по email
 	GetByEmail(ctx context.Context, email string) (*User, error)
 }

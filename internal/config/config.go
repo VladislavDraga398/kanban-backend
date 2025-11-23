@@ -10,14 +10,17 @@ type Config struct {
 func Load() *Config {
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {
-		port = ":8038"
+		// тут ставим твой дефолтный порт
+		port = "8083"
 	}
 
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
-		// дефол плд docker-compose (kanban/kanban@localhost:5432/kanban)
-		dsn = "postgres://postgres:postgres@localhost:5432/kanban?sslmode=disable"
+		dsn = "postgres://kanban:kanban@localhost:5432/kanban?sslmode=disable"
 	}
 
-	return &Config{HTTPAddr: port, DBDSN: dsn}
+	return &Config{
+		HTTPAddr: ":" + port, // вот тут формируется ":8083"
+		DBDSN:    dsn,
+	}
 }

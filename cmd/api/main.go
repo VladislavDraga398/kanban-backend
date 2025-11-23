@@ -1,30 +1,51 @@
 package main
 
 import (
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	cfg "github.com/VladislavDraga398/kanban-backend/internal/config"
 	myhttp "github.com/VladislavDraga398/kanban-backend/internal/http"
+	pg "github.com/VladislavDraga398/kanban-backend/internal/storage/postgres"
 )
 
 func main() {
+	// 1. Загружаем конфиг (порт + DSN БД)
+	config := cfg.Load()
 
-	addr, router := ":8038", myhttp.NewRouter() // Потом внести в конфиг
-	server := myhttp.NewServer(addr, router)    // Ловим сигналы
+	// 2. Подключаемся к Postgres
+	db, err := pg.New(config.DBDSN)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+	defer db.Close()
 
+	// 3. Создаём репозитории поверх БД
+	userRepo := pg.NewUserRepository(db)
+
+	// 4. Собираем HTTP-роутер, передавая зависимости
+	router := myhttp.NewRouter(myhttp.Deps{
+		UserRepo: userRepo,
+	})
+
+	// 5. Поднимаем HTTP-сервер
+	server := myhttp.NewServer(config.HTTPAddr, router)
+
+	// 6. Ловим сигналы и корректно гасим сервер
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Стартуем сервер
 	go func() {
 		if err := server.Start(); err != nil {
-			panic(err)
+			log.Fatalf("server error: %v", err)
 		}
 	}()
 
 	<-stop
+
 	if err := server.Close(); err != nil {
-		panic(err)
+		log.Printf("server shutdown error: %v", err)
 	}
 }
