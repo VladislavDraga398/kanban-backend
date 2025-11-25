@@ -29,6 +29,7 @@ func NewRouter(deps Deps) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
 		})
 	})
 

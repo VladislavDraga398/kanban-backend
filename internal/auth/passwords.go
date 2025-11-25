@@ -12,6 +12,6 @@ func HashPassword(password string) (string, error) {
 }
 
 // ComparePasswords - сравнение хэшей паролей.
-func ComparePasswords(hashedPassword, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+func ComparePasswords(hash, password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
