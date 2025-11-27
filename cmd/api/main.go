@@ -24,10 +24,12 @@ func main() {
 
 	// 3. Создаём репозитории поверх БД
 	userRepo := pg.NewUserRepository(db)
+	boardRepo := pg.NewBoardRepository(db)
 
 	// 4. Собираем HTTP-роутер, передавая зависимости
 	router := myhttp.NewRouter(myhttp.Deps{
-		UserRepo: userRepo,
+		UserRepo:  userRepo,
+		BoardRepo: boardRepo,
 	})
 
 	// 5. Поднимаем HTTP-сервер
@@ -39,13 +41,13 @@ func main() {
 
 	go func() {
 		if err := server.Start(); err != nil {
-			log.Fatalf("server error: %v", err)
+			log.Fatalf("failed to start http server: %v", err)
 		}
 	}()
 
 	<-stop
 
 	if err := server.Close(); err != nil {
-		log.Printf("server shutdown error: %v", err)
+		log.Printf("failed to stop http server: %v", err)
 	}
 }

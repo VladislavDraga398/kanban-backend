@@ -6,8 +6,9 @@ import (
 
 // Board - Кабан-Доска.
 type Board struct {
-	OwnerID   string    // UUID Доски
-	Name      string    // ID пользователя владельца (User.ID)
-	CreatedAt time.Time // Название доски
+	ID        string    // UUID Доски
+	OwnerID   string    // UUID Пользователя-владельца
+	Name      string    // Название доски
+	CreatedAt time.Time // Когда мы создали доску
 	UpdatedAt time.Time // Когда были последние изменения в доске
 }
