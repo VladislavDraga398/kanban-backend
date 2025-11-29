@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/board"
+	"github.com/VladislavDraga398/kanban-backend/internal/domain/column"
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/user"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/handlers"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
@@ -12,8 +13,9 @@ import (
 
 // Deps — зависимости HTTP-слоя (репозитории, сервисы и т.п.).
 type Deps struct {
-	UserRepo  user.Repository
-	BoardRepo board.Repository
+	UserRepo   user.Repository
+	BoardRepo  board.Repository
+	ColumnRepo column.Repository
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -25,10 +27,9 @@ func NewRouter(deps Deps) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	// Auth-handlers
 	authHandler := handlers.NewAuthHandler(deps.UserRepo)
-	// Board-handlers
 	boardHandler := handlers.NewBoardHandler(deps.BoardRepo)
+	columnHandler := handlers.NewColumnHandler(deps.ColumnRepo)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -46,6 +47,11 @@ func NewRouter(deps Deps) http.Handler {
 				r.Get("/{id}", boardHandler.Get)       // Получение доски по её ID.
 				r.Put("/{id}", boardHandler.Update)    // Обновление названия доски.
 				r.Delete("/{id}", boardHandler.Delete) // Удаление доски.
+
+				r.Route("/{board_id}/columns", func(r chi.Router) {
+					r.Get("/", columnHandler.List)    // GET /api/v1/boards/{board_id}/columns
+					r.Post("/", columnHandler.Create) // POST /api/v1/boards/{board_id}/columns
+				})
 			})
 		})
 	})
