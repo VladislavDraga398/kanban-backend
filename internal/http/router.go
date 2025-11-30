@@ -5,6 +5,7 @@ import (
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/board"
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/column"
+	"github.com/VladislavDraga398/kanban-backend/internal/domain/task"
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/user"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/handlers"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
@@ -16,6 +17,7 @@ type Deps struct {
 	UserRepo   user.Repository
 	BoardRepo  board.Repository
 	ColumnRepo column.Repository
+	TaskRepo   task.Repository
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -30,6 +32,7 @@ func NewRouter(deps Deps) http.Handler {
 	authHandler := handlers.NewAuthHandler(deps.UserRepo)
 	boardHandler := handlers.NewBoardHandler(deps.BoardRepo)
 	columnHandler := handlers.NewColumnHandler(deps.ColumnRepo)
+	taskHandler := handlers.NewTaskHandler(deps.TaskRepo)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -51,10 +54,21 @@ func NewRouter(deps Deps) http.Handler {
 				r.Route("/{board_id}/columns", func(r chi.Router) {
 					r.Get("/", columnHandler.List)    // GET /api/v1/boards/{board_id}/columns
 					r.Post("/", columnHandler.Create) // POST /api/v1/boards/{board_id}/columns
+
+					r.Put("/{column_id}", columnHandler.Update)
+					r.Delete("/{column_id}", columnHandler.Delete)
+
+					// задачи внутри колонки
+					r.Route("/{column_id}/tasks", func(r chi.Router) {
+						r.Get("/", taskHandler.List)    // GET  /api/v1/boards/{board_id}/columns/{column_id}/tasks
+						r.Post("/", taskHandler.Create) // POST /api/v1/boards/{board_id}/columns/{column_id}/tasks
+
+						r.Put("/{task_id}", taskHandler.Update)
+						r.Delete("/{task_id}", taskHandler.Delete)
+					})
 				})
 			})
 		})
 	})
-
 	return r
 }

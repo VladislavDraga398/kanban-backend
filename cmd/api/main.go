@@ -24,14 +24,14 @@ func main() {
 
 	// 3. Создаём репозитории поверх БД
 	userRepo := pg.NewUserRepository(db)
-	boardRepo := pg.NewBoardRepository(db)
-	columnRepo := pg.NewColumnRepository(db)
+	boardRepo, columnRepo, taskRepo := pg.NewBoardRepository(db), pg.NewColumnRepository(db), pg.NewTaskRepository(db)
 
 	// 4. Собираем HTTP-роутер, передавая зависимости
 	router := myhttp.NewRouter(myhttp.Deps{
 		UserRepo:   userRepo,
 		BoardRepo:  boardRepo,
 		ColumnRepo: columnRepo,
+		TaskRepo:   taskRepo,
 	})
 
 	// 5. Поднимаем HTTP-сервер
