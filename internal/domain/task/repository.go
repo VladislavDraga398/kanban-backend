@@ -12,6 +12,9 @@ type Repository interface {
 	// Create - создание новой задачи
 	Create(ctx context.Context, task *Task) error
 
+	// MoveToColumn - перемещаем задачу в другую колонку.
+	MoveToColumn(ctx context.Context, task *Task, columnID string) error
+
 	// ListByBoard - Возвращаем все задачи доски, для быстрого отображения.
 	ListByBoard(ctx context.Context, boardID string) ([]Task, error)
 
@@ -19,10 +22,10 @@ type Repository interface {
 	ListByColumn(ctx context.Context, columnID string) ([]Task, error)
 
 	// ListByColumnOwner - Возвращаем задачи для конкретной колонки и владельца.
-	ListByColumnOwner(ctx context.Context, columnID, ownerID, id string) ([]*Task, error)
+	ListByColumnOwner(ctx context.Context, boardID, columnID, ownerID string) ([]*Task, error)
 
 	// CreateInColumn - Создаем задачу в конкретной колонке для конкретного пользователя.
-	CreateInColumn(ctx context.Context, task *Task, columnID, ownerID, id string) error
+	CreateInColumn(ctx context.Context, task *Task, boardID, columnID, ownerID string) error
 
 	// Update - Обновляем название задачи, (заголовок, описание, позицию, колонку)
 	Update(ctx context.Context, task *Task) error

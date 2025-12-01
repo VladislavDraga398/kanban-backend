@@ -43,13 +43,14 @@ func (r *TaskRepository) Create(ctx context.Context, t *task.Task) error {
 
 // ListByBoard — все задачи доски.
 func (r *TaskRepository) ListByBoard(ctx context.Context, boardID string) ([]task.Task, error) {
-	const q = `
+	const (
+		q = `
 		SELECT id, board_id, column_id, title, description, position, created_at, updated_at
 		FROM tasks
 		WHERE board_id = $1
 		ORDER BY position, created_at;
 	`
-
+	)
 	rows, err := r.db.QueryContext(ctx, q, boardID)
 	if err != nil {
 		return nil, err
@@ -94,7 +95,12 @@ func (r *TaskRepository) ListByColumn(ctx context.Context, columnID string) ([]t
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	var res []task.Task
 	for rows.Next() {
@@ -204,7 +210,12 @@ func (r *TaskRepository) ListByColumnOwner(ctx context.Context, boardID, columnI
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	var res []*task.Task
 	for rows.Next() {
@@ -279,6 +290,64 @@ func (r *TaskRepository) CreateInColumn(ctx context.Context, t *task.Task, board
 	t.BoardID = boardID
 	t.ColumnID = columnID
 	t.Position = pos
+
+	return nil
+}
+
+// MoveToColumn — переместить задачу в другую колонку, сохраняя ее позицию.
+func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColumnID string) error {
+	// Проверяем, что колонка принадлежит нужной доске.
+	const check = `
+        SELECT 1
+        FROM columns
+        WHERE id = $1 AND board_id = $2;
+    `
+	var dummy int
+	if err := r.db.QueryRowContext(ctx, check, newColumnID, t.BoardID).Scan(&dummy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return task.ErrNotFound // либо колонки нет, либо другая доска
+		}
+		return err
+	}
+
+	// Находим максимальную позицию в новой колонке.
+	const getPos = `
+        SELECT COALESCE(MAX(position) + 1, 1)
+        FROM tasks
+        WHERE column_id = $1;
+    `
+	var pos int
+	if err := r.db.QueryRowContext(ctx, getPos, newColumnID).Scan(&pos); err != nil {
+		return err
+	}
+
+	// Обновляем колонку, позицию и updated_at.
+	const update = `
+    UPDATE tasks
+    SET column_id = $1,
+        position  = $2,
+        updated_at = NOW()
+    WHERE id = $3
+      AND board_id = $4
+    RETURNING id, board_id, column_id, title, description, position, created_at, updated_at;
+`
+
+	if err := r.db.QueryRowContext(ctx, update, newColumnID, pos, t.ID, t.BoardID).
+		Scan(
+			&t.ID,
+			&t.BoardID,
+			&t.ColumnID,
+			&t.Title,
+			&t.Description,
+			&t.Position,
+			&t.CreatedAt,
+			&t.UpdatedAt,
+		); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return task.ErrNotFound
+		}
+		return err
+	}
 
 	return nil
 }

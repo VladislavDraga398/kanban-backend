@@ -67,6 +67,11 @@ func NewRouter(deps Deps) http.Handler {
 						r.Delete("/{task_id}", taskHandler.Delete)
 					})
 				})
+
+				// перемещение задач между колонками
+				r.Route("/{board_id}/tasks", func(r chi.Router) {
+					r.Patch("/{task_id}/move", taskHandler.Move)
+				})
 			})
 		})
 	})

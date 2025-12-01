@@ -27,6 +27,10 @@ type createTaskRequest struct {
 	Description string `json:"description"`
 }
 
+type moveTaskRequest struct {
+	ColumnID string `json:"column_id"`
+}
+
 type taskResponse struct {
 	ID          string    `json:"id"`
 	BoardID     string    `json:"board_id"`
@@ -214,4 +218,57 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Move — PATCH /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
+func (h *TaskHandler) Move(w http.ResponseWriter, r *http.Request) {
+	// Проверяем авторизацию (получаем userID для будущих доработок)
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	boardID := chi.URLParam(r, "board_id")
+	taskID := chi.URLParam(r, "task_id")
+	if boardID == "" || taskID == "" {
+		http.Error(w, "board id and task id are required", http.StatusBadRequest)
+		return
+	}
+
+	// Читаем JSON с new column_id
+	var req moveTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	req.ColumnID = strings.TrimSpace(req.ColumnID)
+	if req.ColumnID == "" {
+		http.Error(w, "column_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Собираем задачу с ID и BoardID
+	t := &task.Task{
+		ID:      taskID,
+		BoardID: boardID,
+	}
+
+	// Вызываем репозиторий: MoveToColumn проверяет доску/колонку и обновляет
+	if err := h.tasks.MoveToColumn(r.Context(), t, req.ColumnID); err != nil {
+		if errors.Is(err, task.ErrNotFound) {
+			http.Error(w, "task or column not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("failed to move task: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Отдаём обновлённую задачу
+	resp := writeTask(t)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("failed to write response: %v", err)
+	}
 }
