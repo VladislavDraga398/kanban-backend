@@ -11,26 +11,32 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/task"
+	"github.com/VladislavDraga398/kanban-backend/internal/http/httputil"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
 )
 
+// TaskHandler — хендлер для работы с задачами на доске.
 type TaskHandler struct {
 	tasks task.Repository
 }
 
+// NewTaskHandler конструирует хендлер задач.
 func NewTaskHandler(tasks task.Repository) *TaskHandler {
 	return &TaskHandler{tasks: tasks}
 }
 
+// createTaskRequest — тело запроса на создание/обновление задачи.
 type createTaskRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
 
+// moveTaskRequest — тело запроса на перенос задачи в другую колонку.
 type moveTaskRequest struct {
 	ColumnID string `json:"column_id"`
 }
 
+// taskResponse — DTO, который отдаём наружу.
 type taskResponse struct {
 	ID          string    `json:"id"`
 	BoardID     string    `json:"board_id"`
@@ -42,6 +48,7 @@ type taskResponse struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// writeTask — маппинг доменной модели в DTO.
 func writeTask(t *task.Task) taskResponse {
 	return taskResponse{
 		ID:          t.ID,
@@ -55,57 +62,57 @@ func writeTask(t *task.Task) taskResponse {
 	}
 }
 
-// List — GET /api/v1/boards/{board_id}/columns/{column_id}/tasks
+// List возвращает список задач в колонке.
+// GET /api/v1/boards/{board_id}/columns/{column_id}/tasks
 func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	boardID := chi.URLParam(r, "board_id")
 	columnID := chi.URLParam(r, "column_id")
 	if boardID == "" || columnID == "" {
-		http.Error(w, "board id and column id are required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "board id and column id are required")
 		return
 	}
 
-	tasks, err := h.tasks.ListByColumnOwner(r.Context(), boardID, columnID, userID)
+	// Используем твой метод ListByColumnOwner
+	tasksList, err := h.tasks.ListByColumnOwner(r.Context(), boardID, columnID, userID)
 	if err != nil {
 		log.Printf("failed to list tasks: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
-	resp := make([]taskResponse, 0, len(tasks))
-	for _, t := range tasks {
+	resp := make([]taskResponse, 0, len(tasksList))
+	for _, t := range tasksList {
 		resp = append(resp, writeTask(t))
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("failed to write response: %v", err)
-	}
+	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Create — POST /api/v1/boards/{board_id}/columns/{column_id}/tasks
+// Create создаёт задачу в колонке.
+// POST /api/v1/boards/{board_id}/columns/{column_id}/tasks
 func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	boardID := chi.URLParam(r, "board_id")
 	columnID := chi.URLParam(r, "column_id")
 	if boardID == "" || columnID == "" {
-		http.Error(w, "board id and column id are required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "board id and column id are required")
 		return
 	}
 
 	var req createTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
@@ -113,7 +120,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	req.Description = strings.TrimSpace(req.Description)
 
 	if req.Title == "" {
-		http.Error(w, "title is required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "title is required")
 		return
 	}
 
@@ -122,25 +129,29 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 	}
 
+	// Используем CreateInColumn из твоего репозитория
 	if err := h.tasks.CreateInColumn(r.Context(), t, boardID, columnID, userID); err != nil {
+		if errors.Is(err, task.ErrNotFound) {
+			// например, колонка или доска не найдена / не принадлежит пользователю
+			httputil.Error(w, http.StatusNotFound, "board or column not found")
+			return
+		}
+
 		log.Printf("failed to create task: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	resp := writeTask(t)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("failed to write response: %v", err)
-	}
+	httputil.JSON(w, http.StatusCreated, resp)
 }
 
-// Update — PUT /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
+// Update обновляет заголовок/описание задачи.
+// PUT /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
 func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -148,21 +159,20 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	columnID := chi.URLParam(r, "column_id")
 	taskID := chi.URLParam(r, "task_id")
 	if boardID == "" || columnID == "" || taskID == "" {
-		http.Error(w, "board id, column id and task id are required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "board id, column id and task id are required")
 		return
 	}
 
 	var req createTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
 	req.Title = strings.TrimSpace(req.Title)
 	req.Description = strings.TrimSpace(req.Description)
-
 	if req.Title == "" {
-		http.Error(w, "title is required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "title is required")
 		return
 	}
 
@@ -174,28 +184,27 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 	}
 
+	// У тебя Update(ctx, task *Task) — без ownerID, используем её
 	if err := h.tasks.Update(r.Context(), t); err != nil {
 		if errors.Is(err, task.ErrNotFound) {
-			http.Error(w, "task not found", http.StatusNotFound)
+			httputil.Error(w, http.StatusNotFound, "task not found")
 			return
 		}
 		log.Printf("failed to update task: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	resp := writeTask(t)
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("failed to write response: %v", err)
-	}
+	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Delete — DELETE /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
+// Delete удаляет задачу из колонки.
+// DELETE /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
 func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -203,72 +212,68 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	columnID := chi.URLParam(r, "column_id")
 	taskID := chi.URLParam(r, "task_id")
 	if boardID == "" || columnID == "" || taskID == "" {
-		http.Error(w, "board id, column id and task id are required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "board id, column id and task id are required")
 		return
 	}
 
-	// Удаляем задачу, валидируя принадлежность к доске и колонке из URL.
+	// Используем Delete(ctx, id, boardID, columnID)
 	if err := h.tasks.Delete(r.Context(), taskID, boardID, columnID); err != nil {
 		if errors.Is(err, task.ErrNotFound) {
-			http.Error(w, "task not found", http.StatusNotFound)
+			httputil.Error(w, http.StatusNotFound, "task not found")
 			return
 		}
 		log.Printf("failed to delete task: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Move — PATCH /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
+// Move переносит задачу в другую колонку той же доски.
+// PATCH /api/v1/boards/{board_id}/tasks/{task_id}/move
 func (h *TaskHandler) Move(w http.ResponseWriter, r *http.Request) {
-	// Проверяем авторизацию (получаем userID для будущих доработок)
 	_, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	boardID := chi.URLParam(r, "board_id")
 	taskID := chi.URLParam(r, "task_id")
 	if boardID == "" || taskID == "" {
-		http.Error(w, "board id and task id are required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "board id and task id are required")
 		return
 	}
 
-	// Читаем JSON с new column_id
 	var req moveTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 	req.ColumnID = strings.TrimSpace(req.ColumnID)
 	if req.ColumnID == "" {
-		http.Error(w, "column_id is required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "column_id is required")
 		return
 	}
 
-	// Собираем задачу с ID и BoardID
+	// Минимальная модель задачи: знаем только id и доску.
 	t := &task.Task{
 		ID:      taskID,
 		BoardID: boardID,
 	}
 
-	// Вызываем репозиторий: MoveToColumn проверяет доску/колонку и обновляет
+	// Используем MoveToColumn(ctx, task *Task, columnID string)
 	if err := h.tasks.MoveToColumn(r.Context(), t, req.ColumnID); err != nil {
 		if errors.Is(err, task.ErrNotFound) {
-			http.Error(w, "task or column not found", http.StatusNotFound)
+			httputil.Error(w, http.StatusNotFound, "task or column not found")
 			return
 		}
 		log.Printf("failed to move task: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
-	// Отдаём обновлённую задачу
 	resp := writeTask(t)
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("failed to write response: %v", err)
-	}
+	httputil.JSON(w, http.StatusOK, resp)
 }

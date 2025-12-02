@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"time"
@@ -25,12 +26,12 @@ func NewServer(addr string, handler http.Handler) *Server {
 
 // Start Запуск сервера
 func (s *Server) Start() error {
-	log.Printf("srarting HTTP server on %s\n", s.httpServer.Addr)
+	log.Printf("starting HTTP server on %s\n", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
 
-// Close Закрытие сервера
-func (s *Server) Close() error {
-	log.Println("shutnging down HTTP server...")
-	return s.httpServer.Close()
+// Shutdown Плавное завершение работы сервера с таймаутом из внешнего контекста
+func (s *Server) Shutdown(ctx context.Context) error {
+	log.Println("shutting down HTTP server...")
+	return s.httpServer.Shutdown(ctx)
 }

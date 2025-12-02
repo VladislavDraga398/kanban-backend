@@ -10,6 +10,7 @@ import (
 	"github.com/VladislavDraga398/kanban-backend/internal/http/handlers"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
 	"github.com/go-chi/chi/v5"
+	"time"
 )
 
 // Deps — зависимости HTTP-слоя (репозитории, сервисы и т.п.).
@@ -18,6 +19,8 @@ type Deps struct {
 	BoardRepo  board.Repository
 	ColumnRepo column.Repository
 	TaskRepo   task.Repository
+	JWTSecret  string
+	JWTTTL     time.Duration
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -29,7 +32,7 @@ func NewRouter(deps Deps) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	authHandler := handlers.NewAuthHandler(deps.UserRepo)
+	authHandler := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.JWTTTL)
 	boardHandler := handlers.NewBoardHandler(deps.BoardRepo)
 	columnHandler := handlers.NewColumnHandler(deps.ColumnRepo)
 	taskHandler := handlers.NewTaskHandler(deps.TaskRepo)
@@ -42,7 +45,7 @@ func NewRouter(deps Deps) http.Handler {
 
 		// Защищенные ручки - нужно, чтобы middleware.Auth положил корректный UserID в контекст.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.Auth)
+			r.Use(middleware.Auth([]byte(deps.JWTSecret)))
 
 			r.Route("/boards", func(r chi.Router) {
 				r.Get("/", boardHandler.List)          // Список всех досок.

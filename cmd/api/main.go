@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	cfg "github.com/VladislavDraga398/kanban-backend/internal/config"
 	myhttp "github.com/VladislavDraga398/kanban-backend/internal/http"
@@ -32,6 +34,8 @@ func main() {
 		BoardRepo:  boardRepo,
 		ColumnRepo: columnRepo,
 		TaskRepo:   taskRepo,
+		JWTSecret:  config.JWTSecret,
+		JWTTTL:     config.JWTTTL,
 	})
 
 	// 5. Поднимаем HTTP-сервер
@@ -49,7 +53,10 @@ func main() {
 
 	<-stop
 
-	if err := server.Close(); err != nil {
-		log.Printf("failed to stop http server: %v", err)
+	// Плавное завершение с таймаутом
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("failed to gracefully shutdown http server: %v", err)
 	}
 }

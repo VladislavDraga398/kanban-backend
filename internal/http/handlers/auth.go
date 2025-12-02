@@ -10,14 +10,17 @@ import (
 
 	"github.com/VladislavDraga398/kanban-backend/internal/auth"
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/user"
+	"github.com/VladislavDraga398/kanban-backend/internal/http/httputil"
 )
 
 type AuthHandler struct {
-	users user.Repository
+	users     user.Repository
+	jwtSecret []byte
+	jwtTTL    time.Duration
 }
 
-func NewAuthHandler(users user.Repository) *AuthHandler {
-	return &AuthHandler{users: users}
+func NewAuthHandler(users user.Repository, jwtSecret string, jwtTTL time.Duration) *AuthHandler {
+	return &AuthHandler{users: users, jwtSecret: []byte(jwtSecret), jwtTTL: jwtTTL}
 }
 
 // loginRequest - запрос на авторизацию
@@ -30,6 +33,7 @@ type loginRequest struct {
 type loginResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
+	Token string `json:"token"`
 }
 
 // Register - регистрация пользователя
@@ -43,12 +47,17 @@ type registerResponse struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
+	Token     string    `json:"token"`
 }
 
+// Register обрабатывает POST /api/v1/auth/register
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		// Невалидный JSON в теле запроса
+		httputil.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
@@ -56,14 +65,16 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	req.Password = strings.TrimSpace(req.Password)
 
 	if req.Email == "" || req.Password == "" {
-		http.Error(w, "email and password are required", http.StatusBadRequest)
+		// Бизнес-ошибка валидации: не хватает данных
+		httputil.Error(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
+		// Системная ошибка при хешировании
 		log.Printf("failed to hash password: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -75,13 +86,21 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if err := h.users.Create(r.Context(), u); err != nil {
 		// бизнес-ошибка: email уже занят
 		if errors.Is(err, user.ErrEmailAlreadyUsed) {
-			http.Error(w, "email already in use", http.StatusConflict) // 409
+			// 409 Conflict — логично для "email уже используется"
+			httputil.Error(w, http.StatusConflict, "email already in use")
 			return
 		}
 
 		// всё остальное — системные ошибки
 		log.Printf("failed to create user: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	token, err := auth.GenerateJWT(u.ID, h.jwtSecret, h.jwtTTL)
+	if err != nil {
+		log.Printf("failed to sign token: %v", err)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -89,19 +108,20 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		ID:        u.ID,
 		Email:     u.Email,
 		CreatedAt: u.CreatedAt,
+		Token:     token,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("failed to write response: %v", err)
-	}
+	// Успех — возвращаем 201 + JSON
+	httputil.JSON(w, http.StatusCreated, resp)
 }
 
+// Login обрабатывает POST /api/v1/auth/login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
@@ -109,39 +129,45 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	req.Password = strings.TrimSpace(req.Password)
 
 	if req.Email == "" || req.Password == "" {
-		http.Error(w, "email and password are required", http.StatusBadRequest)
+		httputil.Error(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
 
-	// Идет поиск пользователя по email
+	// Идём в репозиторий — ищем пользователя по email
 	u, err := h.users.GetByEmail(r.Context(), req.Email)
 	if err != nil {
-		// Если пользователь не найден — возвращаем ошибку 401
+		// Если пользователь не найден — 401, но не раскрываем, что именно не так
 		if errors.Is(err, user.ErrNotFound) {
-			http.Error(w, "invalid credentials", http.StatusUnauthorized)
+			httputil.Error(w, http.StatusUnauthorized, "invalid credentials")
 			return
 		}
 
 		// Любые другие ошибки — системные
 		log.Printf("failed to get user: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	// Проверка пароля
 	if err := auth.ComparePasswords(u.PasswordHash, req.Password); err != nil {
-		// bcrypt.ErrMismatchedHashAndPassword — пароль не совпадает
-		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		// Неверный пароль — тоже 401, тот же текст, чтобы не палить, существует ли email
+		httputil.Error(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	token, err := auth.GenerateJWT(u.ID, h.jwtSecret, h.jwtTTL)
+	if err != nil {
+		log.Printf("failed to sign token: %v", err)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	resp := loginResponse{
 		ID:    u.ID,
 		Email: u.Email,
+		Token: token,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("failed to write response: %v", err)
-	}
+	// Успешный логин — 200 + JSON с данными пользователя (пока без токена)
+	httputil.JSON(w, http.StatusOK, resp)
 }

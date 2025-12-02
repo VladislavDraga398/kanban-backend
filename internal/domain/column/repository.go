@@ -21,7 +21,7 @@ type Repository interface {
 	// Delete - Удаляем колонку с доски.
 	Delete(ctx context.Context, id, boardID string) error
 
-	// ListByBoardOwner Список колодно к конкретной доске пользователя.
+	// ListByBoardOwner Список колонок конкретной доски пользователя.
 	ListByBoardOwner(ctx context.Context, boardID, ownerID string) ([]*Column, error)
 
 	// CreateInBoard Создаем колонку в конкретной доске пользователя.
