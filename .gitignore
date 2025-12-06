@@ -1,0 +1,32 @@
+# Binaries and build output
+/bin
+/build
+/dist
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Dependencies
+/vendor
+
+# Logs and coverage
+*.log
+*.cover
+*.coverprofile
+coverage.*
+
+# Environment and local settings
+.env
+.env.*
+.vscode
+.idea
+.cache/
+.cache/go-build/
+.cache/go-mod/
+
+# OS files
+.DS_Store
