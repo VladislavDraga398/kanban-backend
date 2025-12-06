@@ -25,9 +25,9 @@ build: fmt vet tidy
 clean:
 	rm -rf bin coverage.out
 
-## run: запуск приложения локально (переменные окружения берутся из .env, если файл существует)
+## run: запуск приложения локально (переменные окружения берутся из env/dev.env и/или .env, если файлы существуют)
 run:
-	@bash -c 'set -a; [ -f .env ] && . .env; set +a; $(GO) run $(PKG)'
+	@bash -c 'set -a; [ -f env/dev.env ] && . env/dev.env; [ -f .env ] && . .env; set +a; $(GO) run $(PKG)'
 
 ## test: запустить все тесты (включая пакет tests)
 test:
