@@ -12,6 +12,7 @@
 
 # Dependencies
 /vendor
+.gopath/
 
 # Logs and coverage
 *.log
