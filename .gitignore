@@ -28,6 +28,7 @@ coverage.*
 .cache/
 .cache/go-build/
 .cache/go-mod/
+.gocache/
 
 # OS files
 .DS_Store
