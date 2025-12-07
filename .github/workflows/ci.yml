@@ -18,6 +18,8 @@ jobs:
       # Provide required envs so tests and builds don't panic
       JWT_SECRET: ci-test-secret
       JWT_TTL: 24h
+      # Use only the toolchain installed by setup-go (avoid auto-downloads)
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,10 +30,11 @@ jobs:
           go-version: '1.24.x'
           cache: true
 
-      - name: Show versions
+      - name: Show versions and Go env
         run: |
           go version
           docker version
+          echo "Go env:" && go env GOROOT GOPATH GOTOOLCHAIN GOVERSION
 
       - name: Go fmt (check diff)
         run: |
