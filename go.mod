@@ -1,15 +1,13 @@
 module github.com/VladislavDraga398/kanban-backend
 
-go 1.23.0
-
-toolchain go1.23.3
+go 1.24
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/testcontainers/testcontainers-go v0.38.0
-	golang.org/x/crypto v0.41.0
+	github.com/testcontainers/testcontainers-go v0.40.0
+	golang.org/x/crypto v0.45.0
 )
 
 replace (
@@ -17,9 +15,9 @@ replace (
 	github.com/tklauser/go-sysconf => github.com/tklauser/go-sysconf v0.3.15
 	github.com/tklauser/numcpus => github.com/tklauser/numcpus v0.10.0
 	go.opentelemetry.io/auto/sdk => go.opentelemetry.io/auto/sdk v1.1.0
-	golang.org/x/sync => golang.org/x/sync v0.16.0
-	golang.org/x/sys => golang.org/x/sys v0.35.0
-	golang.org/x/text => golang.org/x/text v0.28.0
+	golang.org/x/sync => golang.org/x/sync v0.18.0
+	golang.org/x/sys => golang.org/x/sys v0.38.0
+	golang.org/x/text => golang.org/x/text v0.31.0
 )
 
 require (
