@@ -7,6 +7,9 @@ WORKDIR /app
 # Install build deps
 RUN apk add --no-cache git ca-certificates
 
+# Avoid auto-downloading toolchains and allow tidy in container
+ENV GOTOOLCHAIN=local GOFLAGS=-mod=mod
+
 # Cache modules
 COPY go.mod go.sum ./
 RUN go mod download
