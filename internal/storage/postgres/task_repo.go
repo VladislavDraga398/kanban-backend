@@ -127,17 +127,21 @@ func (r *TaskRepository) ListByColumn(ctx context.Context, columnID string) ([]t
 	return res, nil
 }
 
-// Update обновляет задачу.
-func (r *TaskRepository) Update(ctx context.Context, t *task.Task) error {
+// Update обновляет задачу, проверяя владельца доски.
+func (r *TaskRepository) Update(ctx context.Context, t *task.Task, ownerID string) error {
 	const q = `
-		UPDATE tasks
+		UPDATE tasks AS t
 		SET column_id = $1,
 		    title = $2,
 		    description = $3,
-		    position = COALESCE(NULLIF($4, 0), position),
+		    position = COALESCE(NULLIF($4, 0), t.position),
 		    updated_at = NOW()
-		WHERE id = $5 AND board_id = $6
-		RETURNING updated_at;
+		FROM boards b
+		WHERE t.id = $5
+		  AND t.board_id = $6
+		  AND b.id = t.board_id
+		  AND b.owner_id = $7
+		RETURNING t.updated_at;
 	`
 
 	if err := r.db.QueryRowContext(
@@ -149,6 +153,7 @@ func (r *TaskRepository) Update(ctx context.Context, t *task.Task) error {
 		t.Position,
 		t.ID,
 		t.BoardID,
+		ownerID,
 	).Scan(&t.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return task.ErrNotFound
@@ -159,14 +164,19 @@ func (r *TaskRepository) Update(ctx context.Context, t *task.Task) error {
 	return nil
 }
 
-// Delete удаляет задачу по id, убеждаясь, что она принадлежит указанной доске и колонке.
-func (r *TaskRepository) Delete(ctx context.Context, id, boardID, columnID string) error {
+// Delete удаляет задачу по id, убеждаясь, что она принадлежит указанной доске и колонке, и доска принадлежит ownerID.
+func (r *TaskRepository) Delete(ctx context.Context, id, boardID, columnID, ownerID string) error {
 	const q = `
-		DELETE FROM tasks
-		WHERE id = $1 AND board_id = $2 AND column_id = $3;
+		DELETE FROM tasks AS t
+		USING boards b
+		WHERE t.id = $1
+		  AND t.board_id = $2
+		  AND t.column_id = $3
+		  AND b.id = t.board_id
+		  AND b.owner_id = $4;
 	`
 
-	res, err := r.db.ExecContext(ctx, q, id, boardID, columnID)
+	res, err := r.db.ExecContext(ctx, q, id, boardID, columnID, ownerID)
 	if err != nil {
 		return err
 	}
@@ -294,8 +304,8 @@ func (r *TaskRepository) CreateInColumn(ctx context.Context, t *task.Task, board
 	return nil
 }
 
-// MoveToColumn — переместить задачу в другую колонку атомарно с корректировкой позиций.
-func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColumnID string) error {
+// MoveToColumn — переместить задачу в другую колонку атомарно с корректировкой позиций и проверкой владельца доски.
+func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColumnID, ownerID string) error {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return err
@@ -308,7 +318,20 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		}
 	}()
 
-	// 1) Прочитать задачу и залочить строку для корректного удаления из старой колонки.
+	// 1) Убедиться, что доска принадлежит ownerID.
+	const checkBoard = `
+        SELECT 1 FROM boards WHERE id = $1 AND owner_id = $2 FOR UPDATE;
+    `
+	if err := tx.QueryRowContext(ctx, checkBoard, t.BoardID, ownerID).Scan(new(int)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			_ = tx.Rollback()
+			return task.ErrNotFound
+		}
+		_ = tx.Rollback()
+		return err
+	}
+
+	// 2) Прочитать задачу и залочить строку для корректного удаления из старой колонки.
 	const selTask = `
         SELECT id, board_id, column_id, position, title, description, created_at, updated_at
         FROM tasks
@@ -335,7 +358,7 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 	// Если целевая колонка совпадает с текущей — просто ставим в конец этой же колонки.
 	// (Можно оптимизировать, но оставим логикой перемещения.)
 
-	// 2) Проверить, что новая колонка относится к той же доске и залочить строку колонки.
+	// 3) Проверить, что новая колонка относится к той же доске и залочить строку колонки.
 	const checkCol = `
         SELECT id FROM columns WHERE id = $1 AND board_id = $2 FOR UPDATE;
     `
@@ -349,7 +372,7 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		return err
 	}
 
-	// 3) Освободить позицию в исходной колонке (сдвинуть вниз все задачи правее удаляемой).
+	// 4) Освободить позицию в исходной колонке (сдвинуть вниз все задачи правее удаляемой).
 	const compactSrc = `
         UPDATE tasks
         SET position = position - 1
@@ -360,7 +383,7 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		return err
 	}
 
-	// 4) Найти позицию для вставки в новую колонку (в конец).
+	// 5) Найти позицию для вставки в новую колонку (в конец).
 	const getDstPos = `
         SELECT COALESCE(MAX(position) + 1, 1)
         FROM tasks
@@ -372,7 +395,7 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		return err
 	}
 
-	// 5) Обновить саму задачу: колонка, позиция, updated_at.
+	// 6) Обновить саму задачу: колонка, позиция, updated_at.
 	const updTask = `
         UPDATE tasks
         SET column_id = $1,

@@ -1,25 +1,27 @@
 GO ?= go
 APP ?= kanban-backend
 PKG ?= ./cmd/api
+GOCACHE ?= $(CURDIR)/.gocache
+GOENV = env GOCACHE=$(GOCACHE)
 
 .PHONY: help fmt vet tidy build clean run test test-integration cover db-up db-down migrate-up migrate-down
 
 ## fmt: форматирование кода
 fmt:
-	$(GO) fmt ./...
+	$(GOENV) $(GO) fmt ./...
 
 ## vet: статический анализ кода (go vet)
 vet:
-	$(GO) vet ./...
+	$(GOENV) $(GO) vet ./...
 
 ## tidy: приведение зависимостей в порядок
 tidy:
-	$(GO) mod tidy
+	$(GOENV) $(GO) mod tidy
 
 ## build: сборка бинарника ./bin/$(APP)
 build: fmt vet tidy
 	@mkdir -p bin
-	$(GO) build -o bin/$(APP) $(PKG)
+	$(GOENV) $(GO) build -o bin/$(APP) $(PKG)
 
 ## clean: удалить артефакты сборки
 clean:
@@ -27,20 +29,20 @@ clean:
 
 ## run: запуск приложения локально (переменные окружения берутся из env/dev.env и/или .env, если файлы существуют)
 run:
-	@bash -c 'set -a; [ -f env/dev.env ] && . env/dev.env; [ -f .env ] && . .env; set +a; $(GO) run $(PKG)'
+	@bash -c 'set -a; [ -f env/dev.env ] && . env/dev.env; [ -f .env ] && . .env; set +a; env GOCACHE=$(GOCACHE) $(GO) run $(PKG)'
 
 ## test: запустить все тесты (включая пакет tests)
 test:
-	$(GO) test ./... ./tests
+	$(GOENV) $(GO) test ./... ./tests
 
 ## test-integration: только интеграционный сценарий
 test-integration:
-	$(GO) test ./tests -run TestIntegration_FullFlow -count=1
+	$(GOENV) $(GO) test ./tests -run TestIntegration_FullFlow -count=1
 
 ## cover: отчёт о покрытии тестами
 cover:
-	$(GO) test ./... ./tests -coverprofile=coverage.out
-	$(GO) tool cover -func=coverage.out
+	$(GOENV) $(GO) test ./... ./tests -coverprofile=coverage.out
+	$(GOENV) $(GO) tool cover -func=coverage.out
 
 ## db-up: поднять Postgres через docker-compose
 db-up:

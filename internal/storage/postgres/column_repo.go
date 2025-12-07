@@ -64,18 +64,22 @@ func (r *ColumnRepository) ListByBoardID(ctx context.Context, boardID string) ([
 	return res, nil
 }
 
-// Update — обновляет имя и позицию колонки.
-func (r *ColumnRepository) Update(ctx context.Context, c *column.Column) error {
+// Update — обновляет имя и позицию колонки с проверкой владельца доски.
+func (r *ColumnRepository) Update(ctx context.Context, c *column.Column, ownerID string) error {
 	const q = `
-		UPDATE columns
+		UPDATE columns AS c
 		SET name = $1,
-		    position = COALESCE(NULLIF($2, 0), position),
+		    position = COALESCE(NULLIF($2, 0), c.position),
 		    updated_at = NOW()
-		WHERE id = $3 AND board_id = $4
-		RETURNING updated_at;
+		FROM boards b
+		WHERE c.id = $3
+		  AND c.board_id = $4
+		  AND b.id = c.board_id
+		  AND b.owner_id = $5
+		RETURNING c.updated_at;
 	`
 
-	err := r.db.QueryRowContext(ctx, q, c.Name, c.Position, c.ID, c.BoardID).
+	err := r.db.QueryRowContext(ctx, q, c.Name, c.Position, c.ID, c.BoardID, ownerID).
 		Scan(&c.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -87,14 +91,18 @@ func (r *ColumnRepository) Update(ctx context.Context, c *column.Column) error {
 	return nil
 }
 
-// Delete — удаляет колонку по id и board_id.
-func (r *ColumnRepository) Delete(ctx context.Context, id, boardID string) error {
+// Delete — удаляет колонку по id и board_id с проверкой владельца доски.
+func (r *ColumnRepository) Delete(ctx context.Context, id, boardID, ownerID string) error {
 	const q = `
-		DELETE FROM columns
-		WHERE id = $1 AND board_id = $2;
+		DELETE FROM columns AS c
+		USING boards b
+		WHERE c.id = $1
+		  AND c.board_id = $2
+		  AND b.id = c.board_id
+		  AND b.owner_id = $3;
 	`
 
-	res, err := r.db.ExecContext(ctx, q, id, boardID)
+	res, err := r.db.ExecContext(ctx, q, id, boardID, ownerID)
 	if err != nil {
 		return err
 	}

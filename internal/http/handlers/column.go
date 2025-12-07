@@ -136,7 +136,7 @@ func (h *ColumnHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Update обновляет название (и при необходимости позицию) колонки.
 // PUT /api/v1/boards/{board_id}/columns/{column_id}
 func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -174,7 +174,7 @@ func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name:    req.Name,
 	}
 
-	if err := h.columns.Update(r.Context(), c); err != nil {
+	if err := h.columns.Update(r.Context(), c, userID); err != nil {
 		if errors.Is(err, column.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "column not found")
 			return
@@ -191,7 +191,7 @@ func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete удаляет колонку с доски.
 // DELETE /api/v1/boards/{board_id}/columns/{column_id}
 func (h *ColumnHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -209,7 +209,7 @@ func (h *ColumnHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.columns.Delete(r.Context(), columnID, boardID); err != nil {
+	if err := h.columns.Delete(r.Context(), columnID, boardID, userID); err != nil {
 		if errors.Is(err, column.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "column not found")
 			return

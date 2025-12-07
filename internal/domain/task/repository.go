@@ -13,7 +13,8 @@ type Repository interface {
 	Create(ctx context.Context, task *Task) error
 
 	// MoveToColumn - перемещаем задачу в другую колонку.
-	MoveToColumn(ctx context.Context, task *Task, columnID string) error
+	// Учитываем владельца доски.
+	MoveToColumn(ctx context.Context, task *Task, columnID, ownerID string) error
 
 	// ListByBoard - Возвращаем все задачи доски, для быстрого отображения.
 	ListByBoard(ctx context.Context, boardID string) ([]Task, error)
@@ -28,8 +29,10 @@ type Repository interface {
 	CreateInColumn(ctx context.Context, task *Task, boardID, columnID, ownerID string) error
 
 	// Update - Обновляем название задачи, (заголовок, описание, позицию, колонку)
-	Update(ctx context.Context, task *Task) error
+	// Обязательно проверяем владельца доски.
+	Update(ctx context.Context, task *Task, ownerID string) error
 
 	// Delete - Удаляем задачу.
-	Delete(ctx context.Context, id, boardID, columnID string) error
+	// Обязательно проверяем владельца доски.
+	Delete(ctx context.Context, id, boardID, columnID, ownerID string) error
 }

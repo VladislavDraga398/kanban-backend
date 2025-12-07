@@ -16,10 +16,12 @@ type Repository interface {
 	ListByBoardID(ctx context.Context, boardID string) ([]Column, error)
 
 	// Update - Обновляем имя и позицию колонки.
-	Update(ctx context.Context, c *Column) error
+	// Обязательно проверяем, что колонка принадлежит доске владельца.
+	Update(ctx context.Context, c *Column, ownerID string) error
 
 	// Delete - Удаляем колонку с доски.
-	Delete(ctx context.Context, id, boardID string) error
+	// Обязательно проверяем принадлежность доски владельцу.
+	Delete(ctx context.Context, id, boardID, ownerID string) error
 
 	// ListByBoardOwner Список колонок конкретной доски пользователя.
 	ListByBoardOwner(ctx context.Context, boardID, ownerID string) ([]*Column, error)

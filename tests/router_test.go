@@ -18,7 +18,7 @@ func TestProtectedRouteRequiresJWT(t *testing.T) {
 		UserRepo:   &stubUserRepo{},
 		BoardRepo:  &stubBoardRepo{},
 		ColumnRepo: &stubColumnRepo{},
-		TaskRepo:   &stubTaskRepo{moveFn: func(ctx context.Context, t *task.Task, columnID string) error { return nil }},
+		TaskRepo:   &stubTaskRepo{moveFn: func(ctx context.Context, t *task.Task, columnID, ownerID string) error { return nil }},
 		JWTSecret:  secret,
 		JWTTTL:     time.Hour,
 	})

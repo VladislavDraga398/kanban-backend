@@ -97,8 +97,8 @@ func (s *stubBoardRepo) Delete(ctx context.Context, id, ownerID string) error {
 type stubColumnRepo struct {
 	createFn      func(ctx context.Context, c *column.Column) error
 	listFn        func(ctx context.Context, boardID string) ([]column.Column, error)
-	updateFn      func(ctx context.Context, c *column.Column) error
-	deleteFn      func(ctx context.Context, id, boardID string) error
+	updateFn      func(ctx context.Context, c *column.Column, ownerID string) error
+	deleteFn      func(ctx context.Context, id, boardID, ownerID string) error
 	listByOwnerFn func(ctx context.Context, boardID, ownerID string) ([]*column.Column, error)
 	createInFn    func(ctx context.Context, c *column.Column, boardID, ownerID string) error
 }
@@ -117,16 +117,16 @@ func (s *stubColumnRepo) ListByBoardID(ctx context.Context, boardID string) ([]c
 	return nil, nil
 }
 
-func (s *stubColumnRepo) Update(ctx context.Context, c *column.Column) error {
+func (s *stubColumnRepo) Update(ctx context.Context, c *column.Column, ownerID string) error {
 	if s.updateFn != nil {
-		return s.updateFn(ctx, c)
+		return s.updateFn(ctx, c, ownerID)
 	}
 	return nil
 }
 
-func (s *stubColumnRepo) Delete(ctx context.Context, id, boardID string) error {
+func (s *stubColumnRepo) Delete(ctx context.Context, id, boardID, ownerID string) error {
 	if s.deleteFn != nil {
-		return s.deleteFn(ctx, id, boardID)
+		return s.deleteFn(ctx, id, boardID, ownerID)
 	}
 	return nil
 }
@@ -146,16 +146,16 @@ func (s *stubColumnRepo) CreateInBoard(ctx context.Context, c *column.Column, bo
 }
 
 type stubTaskRepo struct {
-	moveFn              func(ctx context.Context, t *task.Task, columnID string) error
+	moveFn              func(ctx context.Context, t *task.Task, columnID, ownerID string) error
 	listByColumnOwnerFn func(ctx context.Context, boardID, columnID, ownerID string) ([]*task.Task, error)
 	createInColumnFn    func(ctx context.Context, t *task.Task, boardID, columnID, ownerID string) error
-	updateFn            func(ctx context.Context, t *task.Task) error
-	deleteFn            func(ctx context.Context, id, boardID, columnID string) error
+	updateFn            func(ctx context.Context, t *task.Task, ownerID string) error
+	deleteFn            func(ctx context.Context, id, boardID, columnID, ownerID string) error
 }
 
 func (s *stubTaskRepo) Create(ctx context.Context, t *task.Task) error { return nil }
-func (s *stubTaskRepo) MoveToColumn(ctx context.Context, t *task.Task, columnID string) error {
-	return s.moveFn(ctx, t, columnID)
+func (s *stubTaskRepo) MoveToColumn(ctx context.Context, t *task.Task, columnID, ownerID string) error {
+	return s.moveFn(ctx, t, columnID, ownerID)
 }
 func (s *stubTaskRepo) ListByBoard(ctx context.Context, boardID string) ([]task.Task, error) {
 	return nil, nil
@@ -175,15 +175,15 @@ func (s *stubTaskRepo) CreateInColumn(ctx context.Context, t *task.Task, boardID
 	}
 	return nil
 }
-func (s *stubTaskRepo) Update(ctx context.Context, t *task.Task) error {
+func (s *stubTaskRepo) Update(ctx context.Context, t *task.Task, ownerID string) error {
 	if s.updateFn != nil {
-		return s.updateFn(ctx, t)
+		return s.updateFn(ctx, t, ownerID)
 	}
 	return nil
 }
-func (s *stubTaskRepo) Delete(ctx context.Context, id, boardID, columnID string) error {
+func (s *stubTaskRepo) Delete(ctx context.Context, id, boardID, columnID, ownerID string) error {
 	if s.deleteFn != nil {
-		return s.deleteFn(ctx, id, boardID, columnID)
+		return s.deleteFn(ctx, id, boardID, columnID, ownerID)
 	}
 	return nil
 }
@@ -357,7 +357,7 @@ func TestTaskCreateValidation(t *testing.T) {
 
 func TestTaskMoveSuccessThroughRouter(t *testing.T) {
 	taskRepo := &stubTaskRepo{
-		moveFn: func(ctx context.Context, t *task.Task, columnID string) error {
+		moveFn: func(ctx context.Context, t *task.Task, columnID, ownerID string) error {
 			t.ColumnID = columnID
 			t.Position = 3
 			t.Title = "moved"
@@ -399,7 +399,7 @@ func TestTaskMoveSuccessThroughRouter(t *testing.T) {
 
 func TestTaskMoveNotFound(t *testing.T) {
 	taskRepo := &stubTaskRepo{
-		moveFn: func(ctx context.Context, t *task.Task, columnID string) error {
+		moveFn: func(ctx context.Context, t *task.Task, columnID, ownerID string) error {
 			return task.ErrNotFound
 		},
 	}

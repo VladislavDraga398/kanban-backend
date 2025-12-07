@@ -149,7 +149,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Update обновляет заголовок/описание задачи.
 // PUT /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
 func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -185,7 +185,7 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// У тебя Update(ctx, task *Task) — без ownerID, используем её
-	if err := h.tasks.Update(r.Context(), t); err != nil {
+	if err := h.tasks.Update(r.Context(), t, userID); err != nil {
 		if errors.Is(err, task.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "task not found")
 			return
@@ -202,7 +202,7 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete удаляет задачу из колонки.
 // DELETE /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}
 func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -217,7 +217,7 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Используем Delete(ctx, id, boardID, columnID)
-	if err := h.tasks.Delete(r.Context(), taskID, boardID, columnID); err != nil {
+	if err := h.tasks.Delete(r.Context(), taskID, boardID, columnID, userID); err != nil {
 		if errors.Is(err, task.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "task not found")
 			return
@@ -233,7 +233,7 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // Move переносит задачу в другую колонку той же доски.
 // PATCH /api/v1/boards/{board_id}/tasks/{task_id}/move
 func (h *TaskHandler) Move(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -264,7 +264,7 @@ func (h *TaskHandler) Move(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Используем MoveToColumn(ctx, task *Task, columnID string)
-	if err := h.tasks.MoveToColumn(r.Context(), t, req.ColumnID); err != nil {
+	if err := h.tasks.MoveToColumn(r.Context(), t, req.ColumnID, userID); err != nil {
 		if errors.Is(err, task.ErrNotFound) {
 			httputil.Error(w, http.StatusNotFound, "task or column not found")
 			return
