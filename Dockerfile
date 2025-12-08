@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ## Multi-stage Dockerfile for kanban-backend
 # Build stage
 FROM golang:1.25-alpine AS builder
@@ -8,7 +9,8 @@ WORKDIR /app
 RUN apk add --no-cache git ca-certificates
 
 # Avoid auto-downloading toolchains and allow tidy in container
-ENV GOTOOLCHAIN=local GOFLAGS=-mod=mod
+ENV GOTOOLCHAIN=local
+ENV GOFLAGS -mod=mod
 
 # Cache modules
 COPY go.mod go.sum ./
@@ -37,6 +39,8 @@ USER nonroot:nonroot
 
 # Environment variables (override in your deployment)
 ENV HTTP_PORT=8083
-# DB_DSN, JWT_SECRET, JWT_TTL are expected to be provided at runtime
+# WARNING: This is a development-only secret. ALWAYS override in production!
+ENV JWT_SECRET=dev-secret-please-change-in-production
+# DB_DSN and JWT_TTL can be provided at runtime (JWT_TTL defaults to 24h in code)
 
 ENTRYPOINT ["/kanban-backend"]
