@@ -4,7 +4,7 @@ PKG ?= ./cmd/api
 GOCACHE ?= $(CURDIR)/.gocache
 GOENV = env GOCACHE=$(GOCACHE)
 
-.PHONY: help fmt vet tidy build clean run test test-integration cover db-up db-down migrate-up migrate-down
+.PHONY: help fmt vet tidy build clean run test test-integration cover db-up db-down migrate-up migrate-down docker-up docker-down docker-logs docker-rebuild
 
 ## fmt: форматирование кода
 fmt:
@@ -60,6 +60,22 @@ migrate-up:
 ## migrate-down: откат миграций (если предусмотрены down-скрипты)
 migrate-down:
 	@echo "No down migrations provided. Add a down SQL and update this target if needed."
+
+## docker-up: запустить весь стек (БД + приложение) через docker-compose
+docker-up:
+	docker compose up -d --build
+
+## docker-down: остановить весь стек и удалить контейнеры
+docker-down:
+	docker compose down
+
+## docker-logs: показать логи всех сервисов
+docker-logs:
+	docker compose logs -f
+
+## docker-rebuild: пересобрать и перезапустить приложение
+docker-rebuild:
+	docker compose up -d --build app
 
 ## help: список команд Makefile
 help:

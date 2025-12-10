@@ -13,6 +13,29 @@ services:
       - db-data:/var/lib/postgresql/data
       # Скрипты инициализации БД (наша миграция)
       - ./migrations:/docker-entrypoint-init-db.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanban"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      HTTP_PORT: 8083
+      # Используем имя сервиса "db" вместо localhost для подключения к PostgreSQL
+      DB_DSN: "postgres://kanban:kanban@db:5432/kanban?sslmode=disable"
+      # ВАЖНО: Заменим, если доберемся в production!
+      JWT_SECRET: "dev-secret-please-change-in-production"
+      JWT_TTL: "24h"
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   db-data:

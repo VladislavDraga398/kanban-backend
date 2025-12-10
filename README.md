@@ -3,12 +3,44 @@
 REST API для досок/колонок/задач. Минимальная аутентификация через JWT.
 
 ## Требования
-- Go (1.23+)
+- Go (1.25+)
 - Docker + Docker Compose (для локальной БД и интеграционных тестов)
 - make
 
 ## Быстрый старт
-1) Поднять Postgres через Docker Compose:
+
+### Вариант 1: Полный стек в Docker (рекомендуется)
+Самый простой способ — запустить всё через Docker Compose:
+
+```bash
+make docker-up
+```
+
+Эта команда:
+- Соберёт Docker-образ приложения
+- Поднимет PostgreSQL
+- Применит миграции автоматически
+- Запустит приложение с правильной конфигурацией
+
+Проверка healthcheck:
+```bash
+curl -s http://localhost:8083/healthz
+```
+
+Просмотр логов:
+```bash
+make docker-logs
+```
+
+Остановка всего стека:
+```bash
+make docker-down
+```
+
+### Вариант 2: Локальная разработка (Go на хосте)
+Если хотите запускать приложение напрямую через Go:
+
+1) Поднять только PostgreSQL:
 ```bash
 make db-up
 ```
@@ -27,17 +59,21 @@ curl -s http://localhost:8083/healthz
 
 ## Конфигурация (переменные окружения)
 - `HTTP_PORT` — порт HTTP (по умолчанию `8083`).
-- `DB_DSN` — строка подключения к Postgres. Для docker-compose: `postgres://kanban:kanban@localhost:5432/kanban?sslmode=disable`.
+- `DB_DSN` — строка подключения к Postgres:
+  - **Для локальной разработки** (Go на хосте): `postgres://kanban:kanban@localhost:5432/kanban?sslmode=disable`
+  - **Для Docker Compose**: `postgres://kanban:kanban@db:5432/kanban?sslmode=disable` (использует имя сервиса "db")
 - `JWT_SECRET` — секрет для подписи JWT, обязательно непустой.
 - `JWT_TTL` — срок жизни токена, например `24h`.
 
-Пример `env/dev.env`:
+Пример `env/dev.env` для локальной разработки:
 ```env
 HTTP_PORT=8083
 DB_DSN=postgres://kanban:kanban@localhost:5432/kanban?sslmode=disable
 JWT_SECRET=change-me-please
 JWT_TTL=24h
 ```
+
+**Важно:** При использовании `make docker-up` переменные окружения настроены автоматически в `docker-compose.yml`, создавать `env/dev.env` не нужно.
 
 Примечания:
 - Рабочие файлы с секретами (`env/*.env`) не коммитим. В репозитории добавлен `env/.gitignore`, который игнорирует реальные `*.env` и оставляет только примеры `*.example.env`.
@@ -49,19 +85,34 @@ make build   # соберёт бинарник в ./bin/kanban-backend
 ```
 
 ## Полезные команды Makefile
+
+### Docker Compose команды (полный стек)
+```bash
+make docker-up       # запустить весь стек (БД + приложение)
+make docker-down     # остановить весь стек и удалить контейнеры
+make docker-logs     # показать логи всех сервисов (с -f для follow)
+make docker-rebuild  # пересобрать и перезапустить приложение
+```
+
+### Локальная разработка
 ```bash
 make help            # список целей с описанием
 make fmt vet tidy    # форматирование / проверка / tidy модулей
+make build           # собрать бинарник в ./bin/kanban-backend
 make run             # запуск (учитывает .env, если есть)
-make test            # все тесты (нужен Docker для интеграции)
-make test-integration# только интеграционный сценарий
-make cover           # отчёт о покрытии тестами
-make db-up           # поднять БД через docker-compose
-make db-down         # остановить контейнеры
+make db-up           # поднять только БД через docker-compose
+make db-down         # остановить контейнеры БД
 make migrate-up      # применить миграции через psql к DB_DSN
 ```
 
-Docker Compose уже применяет миграции на старте контейнера (`migrations/` монтируются в init), так что для локального окружения обычно достаточно `make db-up`.
+### Тестирование
+```bash
+make test            # все тесты (нужен Docker для интеграции)
+make test-integration# только интеграционный сценарий
+make cover           # отчёт о покрытии тестами
+```
+
+**Примечание:** Docker Compose автоматически применяет миграции при старте БД (`migrations/` монтируются в `/docker-entrypoint-init-db.d`).
 
 ## Аутентификация
 1. Зарегистрироваться: `POST /api/v1/auth/register` → в ответе придёт `token`.
