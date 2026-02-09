@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -17,12 +17,19 @@ import (
 
 // ColumnHandler — хендлер для работы с колонками на досках.
 type ColumnHandler struct {
-	columns column.Repository
+	columns columnStore
 }
 
 // NewColumnHandler конструирует хендлер колонок.
-func NewColumnHandler(columns column.Repository) *ColumnHandler {
+func NewColumnHandler(columns columnStore) *ColumnHandler {
 	return &ColumnHandler{columns: columns}
+}
+
+type columnStore interface {
+	ListByBoardOwner(ctx context.Context, boardID, ownerID string) ([]*column.Column, error)
+	CreateInBoard(ctx context.Context, column *column.Column, boardID, ownerID string) error
+	Update(ctx context.Context, c *column.Column, ownerID string) error
+	Delete(ctx context.Context, id, boardID, ownerID string) error
 }
 
 // createColumnRequest — тело запроса на создание/обновление колонки.
@@ -100,8 +107,7 @@ func (h *ColumnHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createColumnRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -155,8 +161,7 @@ func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createColumnRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 

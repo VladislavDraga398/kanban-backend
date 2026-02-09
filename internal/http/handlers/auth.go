@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -14,12 +14,17 @@ import (
 )
 
 type AuthHandler struct {
-	users     user.Repository
+	users     authUserStore
 	jwtSecret []byte
 	jwtTTL    time.Duration
 }
 
-func NewAuthHandler(users user.Repository, jwtSecret string, jwtTTL time.Duration) *AuthHandler {
+type authUserStore interface {
+	Create(ctx context.Context, u *user.User) error
+	GetByEmail(ctx context.Context, email string) (*user.User, error)
+}
+
+func NewAuthHandler(users authUserStore, jwtSecret string, jwtTTL time.Duration) *AuthHandler {
 	return &AuthHandler{users: users, jwtSecret: []byte(jwtSecret), jwtTTL: jwtTTL}
 }
 
@@ -53,11 +58,7 @@ type registerResponse struct {
 // Register обрабатывает POST /api/v1/auth/register
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		// Невалидный JSON в теле запроса
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -118,10 +119,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 // Login обрабатывает POST /api/v1/auth/login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 

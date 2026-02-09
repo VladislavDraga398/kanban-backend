@@ -1,0 +1,12 @@
+.git
+.gocache
+.gopath
+bin
+api
+coverage.out
+.env
+env/*.env
+frontend
+**/*.md
+**/*_test.go
+tests

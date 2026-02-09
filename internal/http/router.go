@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/board"
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/column"
@@ -10,7 +11,7 @@ import (
 	"github.com/VladislavDraga398/kanban-backend/internal/http/handlers"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
 	"github.com/go-chi/chi/v5"
-	"time"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 // Deps — зависимости HTTP-слоя (репозитории, сервисы и т.п.).
@@ -25,6 +26,9 @@ type Deps struct {
 
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
+	r.Use(chimiddleware.RequestID)
+	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Timeout(30 * time.Second))
 
 	// Healthcheck — чтобы k8s/docker могли проверять живой ли сервис.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

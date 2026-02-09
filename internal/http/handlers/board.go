@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -17,12 +17,20 @@ import (
 
 // BoardHandler отвечает за операции с досками (boards).
 type BoardHandler struct {
-	boards board.Repository
+	boards boardStore
 }
 
 // NewBoardHandler конструирует хэндлер досок.
-func NewBoardHandler(boards board.Repository) *BoardHandler {
+func NewBoardHandler(boards boardStore) *BoardHandler {
 	return &BoardHandler{boards: boards}
+}
+
+type boardStore interface {
+	ListByOwnerID(ctx context.Context, ownerID string) ([]*board.Board, error)
+	GetByID(ctx context.Context, id, ownerID string) (*board.Board, error)
+	Create(ctx context.Context, b *board.Board) error
+	Update(ctx context.Context, b *board.Board) error
+	Delete(ctx context.Context, id, ownerID string) error
 }
 
 // createBoardRequest — тело запроса при создании/обновлении доски.
@@ -111,8 +119,7 @@ func (h *BoardHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createBoardRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -152,8 +159,7 @@ func (h *BoardHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createBoardRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 

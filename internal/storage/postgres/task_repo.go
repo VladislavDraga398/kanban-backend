@@ -141,7 +141,7 @@ func (r *TaskRepository) Update(ctx context.Context, t *task.Task, ownerID strin
 		  AND t.board_id = $6
 		  AND b.id = t.board_id
 		  AND b.owner_id = $7
-		RETURNING t.updated_at;
+		RETURNING t.id, t.board_id, t.column_id, t.title, t.description, t.position, t.created_at, t.updated_at;
 	`
 
 	if err := r.db.QueryRowContext(
@@ -154,7 +154,16 @@ func (r *TaskRepository) Update(ctx context.Context, t *task.Task, ownerID strin
 		t.ID,
 		t.BoardID,
 		ownerID,
-	).Scan(&t.UpdatedAt); err != nil {
+	).Scan(
+		&t.ID,
+		&t.BoardID,
+		&t.ColumnID,
+		&t.Title,
+		&t.Description,
+		&t.Position,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return task.ErrNotFound
 		}
@@ -254,52 +263,44 @@ func (r *TaskRepository) ListByColumnOwner(ctx context.Context, boardID, columnI
 
 // CreateInColumn — создать задачу в колонке конкретного пользователя.
 func (r *TaskRepository) CreateInColumn(ctx context.Context, t *task.Task, boardID, columnID, ownerID string) error {
-	// 1. Проверяем, что колонка принадлежит доске, а доска — пользователю.
-	const check = `
-		SELECT 1
-		FROM columns c
-		JOIN boards b ON c.board_id = b.id
-		WHERE c.id = $1
-		  AND c.board_id = $2
-		  AND b.owner_id = $3;
+	const insert = `
+		WITH locked_column AS (
+			SELECT c.id, c.board_id
+			FROM columns c
+			JOIN boards b ON c.board_id = b.id
+			WHERE c.id = $1
+			  AND c.board_id = $2
+			  AND b.owner_id = $3
+			FOR UPDATE
+		),
+		next_pos AS (
+			SELECT COALESCE(MAX(t.position) + 1, 1) AS pos
+			FROM tasks t
+			JOIN locked_column lc ON t.column_id = lc.id
+		)
+		INSERT INTO tasks (board_id, column_id, title, description, position)
+		SELECT lc.board_id, lc.id, $4, $5, np.pos
+		FROM locked_column lc
+		CROSS JOIN next_pos np
+		RETURNING id, board_id, column_id, title, description, position, created_at, updated_at;
 	`
 
-	var tmp int
-	if err := r.db.QueryRowContext(ctx, check, columnID, boardID, ownerID).Scan(&tmp); err != nil {
+	if err := r.db.QueryRowContext(ctx, insert, columnID, boardID, ownerID, t.Title, t.Description).
+		Scan(
+			&t.ID,
+			&t.BoardID,
+			&t.ColumnID,
+			&t.Title,
+			&t.Description,
+			&t.Position,
+			&t.CreatedAt,
+			&t.UpdatedAt,
+		); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// либо нет такой колонки, либо чужая доска
 			return task.ErrNotFound
 		}
 		return err
 	}
-
-	// 2. Считаем позицию в колонке.
-	const getPos = `
-		SELECT COALESCE(MAX(position) + 1, 1)
-		FROM tasks
-		WHERE column_id = $1;
-	`
-
-	var pos int
-	if err := r.db.QueryRowContext(ctx, getPos, columnID).Scan(&pos); err != nil {
-		return err
-	}
-
-	// 3. Вставляем задачу.
-	const insert = `
-		INSERT INTO tasks (board_id, column_id, title, description, position)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at;
-	`
-
-	if err := r.db.QueryRowContext(ctx, insert, boardID, columnID, t.Title, t.Description, pos).
-		Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt); err != nil {
-		return err
-	}
-
-	t.BoardID = boardID
-	t.ColumnID = columnID
-	t.Position = pos
 
 	return nil
 }

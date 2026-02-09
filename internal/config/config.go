@@ -3,8 +3,10 @@ package config
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,15 +18,20 @@ type Config struct {
 	JWTTTL    time.Duration
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 	// Try to load environment from local files if running outside Makefile/docker.
 	// Non-fatal: we only set variables that are currently missing.
-	_ = loadEnvFiles()
+	if err := loadEnvFiles(); err != nil {
+		return nil, fmt.Errorf("load env files: %w", err)
+	}
 
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {
-		// тут ставим твой дефолтный порт
 		port = "8083"
+	}
+	portNum, err := strconv.Atoi(port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		return nil, fmt.Errorf("invalid HTTP_PORT: %q", port)
 	}
 
 	dsn := os.Getenv("DB_DSN")
@@ -32,16 +39,21 @@ func Load() *Config {
 		dsn = "postgres://kanban:kanban@localhost:5432/kanban?sslmode=disable"
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
 	if jwtSecret == "" {
-		panic("JWT_SECRET is required")
+		return nil, errors.New("JWT_SECRET is required")
 	}
 
 	ttl := 24 * time.Hour
 	if ttlStr := os.Getenv("JWT_TTL"); ttlStr != "" {
-		if parsed, err := time.ParseDuration(ttlStr); err == nil {
-			ttl = parsed
+		parsed, err := time.ParseDuration(ttlStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JWT_TTL: %w", err)
 		}
+		ttl = parsed
+	}
+	if ttl <= 0 {
+		return nil, errors.New("JWT_TTL must be greater than 0")
 	}
 
 	return &Config{
@@ -49,7 +61,7 @@ func Load() *Config {
 		DBDSN:     dsn,
 		JWTSecret: jwtSecret,
 		JWTTTL:    ttl,
-	}
+	}, nil
 }
 
 // loadEnvFiles loads variables from .env and env/dev.env files if they exist.

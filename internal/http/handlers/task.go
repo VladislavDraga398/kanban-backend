@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -17,12 +17,20 @@ import (
 
 // TaskHandler — хендлер для работы с задачами на доске.
 type TaskHandler struct {
-	tasks task.Repository
+	tasks taskStore
 }
 
 // NewTaskHandler конструирует хендлер задач.
-func NewTaskHandler(tasks task.Repository) *TaskHandler {
+func NewTaskHandler(tasks taskStore) *TaskHandler {
 	return &TaskHandler{tasks: tasks}
+}
+
+type taskStore interface {
+	ListByColumnOwner(ctx context.Context, boardID, columnID, ownerID string) ([]*task.Task, error)
+	CreateInColumn(ctx context.Context, task *task.Task, boardID, columnID, ownerID string) error
+	Update(ctx context.Context, task *task.Task, ownerID string) error
+	Delete(ctx context.Context, id, boardID, columnID, ownerID string) error
+	MoveToColumn(ctx context.Context, task *task.Task, columnID, ownerID string) error
 }
 
 // createTaskRequest — тело запроса на создание/обновление задачи.
@@ -111,8 +119,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -164,8 +171,7 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -247,8 +253,7 @@ func (h *TaskHandler) Move(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req moveTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 	req.ColumnID = strings.TrimSpace(req.ColumnID)
