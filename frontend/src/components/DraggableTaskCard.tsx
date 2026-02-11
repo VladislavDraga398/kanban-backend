@@ -27,10 +27,8 @@ export function DraggableTaskCard({ task, onEdit, onDelete, pending }: Draggable
       ref={setNodeRef}
       style={style}
       className={`task-card ${isDragging ? 'is-dragging' : ''}`}
-      {...attributes}
-      {...listeners}
     >
-      <header>
+      <header {...attributes} {...listeners}>
         <h4>{task.title}</h4>
       </header>
       {task.description && <p>{task.description}</p>}
