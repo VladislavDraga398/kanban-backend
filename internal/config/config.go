@@ -19,8 +19,8 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	// Try to load environment from local files if running outside Makefile/docker.
-	// Non-fatal: we only set variables that are currently missing.
+	// Пробуем загрузить переменные из локальных env-файлов.
+	// Ошибка нефатальная для отсутствующих файлов: подставляем только отсутствующие переменные.
 	if err := loadEnvFiles(); err != nil {
 		return nil, fmt.Errorf("load env files: %w", err)
 	}
@@ -57,19 +57,19 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPAddr:  ":" + port, // вот тут формируется ":8083"
+		HTTPAddr:  ":" + port,
 		DBDSN:     dsn,
 		JWTSecret: jwtSecret,
 		JWTTTL:    ttl,
 	}, nil
 }
 
-// loadEnvFiles loads variables from .env and env/dev.env files if they exist.
-// It will NOT override variables that are already present in the environment.
+// loadEnvFiles загружает переменные из .env и env/dev.env, если файлы существуют.
+// Уже заданные в окружении переменные не перезаписываются.
 func loadEnvFiles() error {
 	var firstErr error
 
-	// Check current working directory and a couple of common locations.
+	// Проверяем текущую директорию и стандартный путь проекта.
 	candidates := []string{
 		".env",
 		filepath.Join("env", "dev.env"),
@@ -77,7 +77,7 @@ func loadEnvFiles() error {
 
 	for _, p := range candidates {
 		if err := loadEnvFile(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			// keep the first non-not-exist error
+			// Сохраняем первую ошибку, кроме "файл не существует".
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -99,7 +99,7 @@ func loadEnvFile(path string) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// simple KEY=VALUE parser, no quotes handling
+		// Простой парсер KEY=VALUE без обработки кавычек.
 		if eq := strings.IndexByte(line, '='); eq != -1 {
 			key := strings.TrimSpace(line[:eq])
 			val := strings.TrimSpace(line[eq+1:])

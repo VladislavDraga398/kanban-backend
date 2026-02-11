@@ -95,12 +95,7 @@ func (r *TaskRepository) ListByColumn(ctx context.Context, columnID string) ([]t
 	if err != nil {
 		return nil, err
 	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-
-		}
-	}(rows)
+	defer rows.Close()
 
 	var res []task.Task
 	for rows.Next() {
@@ -229,12 +224,7 @@ func (r *TaskRepository) ListByColumnOwner(ctx context.Context, boardID, columnI
 	if err != nil {
 		return nil, err
 	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-
-		}
-	}(rows)
+	defer rows.Close()
 
 	var res []*task.Task
 	for rows.Next() {
@@ -356,8 +346,26 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		return err
 	}
 
-	// Если целевая колонка совпадает с текущей — просто ставим в конец этой же колонки.
-	// (Можно оптимизировать, но оставим логикой перемещения.)
+	// Если перенос в ту же колонку, оставляем порядок как есть и возвращаем текущее состояние задачи.
+	if newColumnID == curColumnID {
+		t.ID = curID
+		t.BoardID = curBoardID
+		t.ColumnID = curColumnID
+		t.Title = title
+		t.Description = description
+		t.Position = curPos
+		if createdAt.Valid {
+			t.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			t.UpdatedAt = updatedAt.Time
+		}
+		if err := tx.Commit(); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		return nil
+	}
 
 	// 3) Проверить, что новая колонка относится к той же доске и залочить строку колонки.
 	const checkCol = `
@@ -396,7 +404,7 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		return err
 	}
 
-	// 6) Обновить саму задачу: колонка, позиция, updated_at.
+	// 6) Обновить саму задачу: колонка, позиция и updated_at.
 	const updTask = `
         UPDATE tasks
         SET column_id = $1,

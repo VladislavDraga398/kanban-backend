@@ -4,11 +4,11 @@ import (
 	"time"
 )
 
-// Board - Кабан-Доска.
+// Board описывает канбан-доску.
 type Board struct {
-	ID        string    // UUID Доски
-	OwnerID   string    // UUID Пользователя-владельца
-	Name      string    // Название доски
-	CreatedAt time.Time // Когда мы создали доску
-	UpdatedAt time.Time // Когда были последние изменения в доске
+	ID        string
+	OwnerID   string
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

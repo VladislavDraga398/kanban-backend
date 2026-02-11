@@ -66,7 +66,7 @@ func main() {
 		return
 	}
 
-	// Плавное завершение с таймаутом
+	// Плавное завершение с тайм-аутом
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {

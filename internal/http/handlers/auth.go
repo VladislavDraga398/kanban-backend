@@ -28,26 +28,22 @@ func NewAuthHandler(users authUserStore, jwtSecret string, jwtTTL time.Duration)
 	return &AuthHandler{users: users, jwtSecret: []byte(jwtSecret), jwtTTL: jwtTTL}
 }
 
-// loginRequest - запрос на авторизацию
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-// loginResponse - ответ на запрос на авторизацию
 type loginResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Token string `json:"token"`
 }
 
-// Register - регистрация пользователя
 type registerRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-// registerResponse - ответ на регистрацию пользователя
 type registerResponse struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
@@ -66,14 +62,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	req.Password = strings.TrimSpace(req.Password)
 
 	if req.Email == "" || req.Password == "" {
-		// Бизнес-ошибка валидации: не хватает данных
 		httputil.Error(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		// Системная ошибка при хешировании
 		log.Printf("failed to hash password: %v", err)
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -85,14 +79,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.users.Create(r.Context(), u); err != nil {
-		// бизнес-ошибка: email уже занят
 		if errors.Is(err, user.ErrEmailAlreadyUsed) {
-			// 409 Conflict — логично для "email уже используется"
 			httputil.Error(w, http.StatusConflict, "email already in use")
 			return
 		}
 
-		// всё остальное — системные ошибки
 		log.Printf("failed to create user: %v", err)
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -112,7 +103,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Token:     token,
 	}
 
-	// Успех — возвращаем 201 + JSON
 	httputil.JSON(w, http.StatusCreated, resp)
 }
 
@@ -131,24 +121,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Идём в репозиторий — ищем пользователя по email
 	u, err := h.users.GetByEmail(r.Context(), req.Email)
 	if err != nil {
-		// Если пользователь не найден — 401, но не раскрываем, что именно не так
 		if errors.Is(err, user.ErrNotFound) {
 			httputil.Error(w, http.StatusUnauthorized, "invalid credentials")
 			return
 		}
 
-		// Любые другие ошибки — системные
 		log.Printf("failed to get user: %v", err)
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
-	// Проверка пароля
 	if err := auth.ComparePasswords(u.PasswordHash, req.Password); err != nil {
-		// Неверный пароль — тоже 401, тот же текст, чтобы не палить, существует ли email
 		httputil.Error(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -166,6 +151,5 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Token: token,
 	}
 
-	// Успешный логин — 200 + JSON с данными пользователя (пока без токена)
 	httputil.JSON(w, http.StatusOK, resp)
 }

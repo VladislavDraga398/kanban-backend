@@ -15,10 +15,10 @@ var (
 	ErrBodyTooLarge = errors.New("request body too large")
 )
 
-// DecodeJSON decodes JSON body into dst using strict rules:
-// - limited body size
-// - unknown fields are rejected
-// - only a single JSON object is allowed in body
+// DecodeJSON декодирует JSON-тело запроса в dst по строгим правилам:
+// - ограничение размера тела;
+// - запрет неизвестных полей;
+// - запрет нескольких JSON-объектов в одном body.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64) error {
 	if maxBytes > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
@@ -42,7 +42,7 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64)
 	return nil
 }
 
-// DecodeJSONOrError decodes request JSON and writes a normalized 400 error response on failure.
+// DecodeJSONOrError декодирует JSON и при ошибке пишет нормализованный ответ 400.
 func DecodeJSONOrError(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64) bool {
 	if err := DecodeJSON(w, r, dst, maxBytes); err != nil {
 		if errors.Is(err, ErrBodyTooLarge) {

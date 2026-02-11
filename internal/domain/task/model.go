@@ -4,14 +4,14 @@ import (
 	"time"
 )
 
-// Task - Задача/Карточка на доске.
+// Task описывает карточку задачи в колонке доски.
 type Task struct {
-	ID          string // UUID задачи
-	BoardID     string // ID доски (для выборки задач доски)
-	ColumnID    string // ID колонки, в которой находится задача
-	Title       string // Короткий заголовок
-	Description string // Подробное описание
-	Position    int    // Позиция задачи в колонке
+	ID          string
+	BoardID     string
+	ColumnID    string
+	Title       string
+	Description string
+	Position    int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

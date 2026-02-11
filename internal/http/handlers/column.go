@@ -12,15 +12,14 @@ import (
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/column"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/httputil"
-	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
 )
 
-// ColumnHandler — хендлер для работы с колонками на досках.
+// ColumnHandler обрабатывает эндпоинты колонок.
 type ColumnHandler struct {
 	columns columnStore
 }
 
-// NewColumnHandler конструирует хендлер колонок.
+// NewColumnHandler создаёт хендлер колонок.
 func NewColumnHandler(columns columnStore) *ColumnHandler {
 	return &ColumnHandler{columns: columns}
 }
@@ -32,12 +31,10 @@ type columnStore interface {
 	Delete(ctx context.Context, id, boardID, ownerID string) error
 }
 
-// createColumnRequest — тело запроса на создание/обновление колонки.
 type createColumnRequest struct {
 	Name string `json:"name"`
 }
 
-// columnResponse — то, что отдаём наружу клиенту.
 type columnResponse struct {
 	ID        string    `json:"id"`
 	BoardID   string    `json:"board_id"`
@@ -47,7 +44,6 @@ type columnResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// writeColumn — маппинг доменной модели в DTO.
 func writeColumn(c *column.Column) columnResponse {
 	return columnResponse{
 		ID:        c.ID,
@@ -59,12 +55,10 @@ func writeColumn(c *column.Column) columnResponse {
 	}
 }
 
-// List возвращает все колонки доски текущего пользователя.
-// GET /api/v1/boards/{board_id}/columns
+// List обрабатывает GET /api/v1/boards/{board_id}/columns.
 func (h *ColumnHandler) List(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -76,8 +70,6 @@ func (h *ColumnHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	cols, err := h.columns.ListByBoardOwner(r.Context(), boardID, userID)
 	if err != nil {
-		// В большинстве случаев List* возвращает пустой список и nil,
-		// но если репозиторий вернёт ошибку — это уже системная проблема.
 		log.Printf("failed to list columns: %v", err)
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -91,12 +83,10 @@ func (h *ColumnHandler) List(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Create создаёт новую колонку в доске пользователя.
-// POST /api/v1/boards/{board_id}/columns
+// Create обрабатывает POST /api/v1/boards/{board_id}/columns.
 func (h *ColumnHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -121,11 +111,8 @@ func (h *ColumnHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Name: req.Name,
 	}
 
-	// CreateInBoard проверяет, что доска принадлежит пользователю,
-	// выставляет position и timestamps.
 	if err := h.columns.CreateInBoard(r.Context(), c, boardID, userID); err != nil {
 		if errors.Is(err, column.ErrNotFound) {
-			// Например, доска не найдена или не принадлежит пользователю.
 			httputil.Error(w, http.StatusNotFound, "board not found")
 			return
 		}
@@ -139,12 +126,10 @@ func (h *ColumnHandler) Create(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusCreated, resp)
 }
 
-// Update обновляет название (и при необходимости позицию) колонки.
-// PUT /api/v1/boards/{board_id}/columns/{column_id}
+// Update обрабатывает PUT /api/v1/boards/{board_id}/columns/{column_id}.
 func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -171,8 +156,6 @@ func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Здесь предполагается, что репозиторий проверяет board_id/owner_id,
-	// либо ты проверяешь доступ выше по уровню.
 	c := &column.Column{
 		ID:      columnID,
 		BoardID: boardID,
@@ -193,12 +176,10 @@ func (h *ColumnHandler) Update(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Delete удаляет колонку с доски.
-// DELETE /api/v1/boards/{board_id}/columns/{column_id}
+// Delete обрабатывает DELETE /api/v1/boards/{board_id}/columns/{column_id}.
 func (h *ColumnHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
