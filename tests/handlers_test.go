@@ -19,6 +19,7 @@ import (
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/user"
 	myhttp "github.com/VladislavDraga398/kanban-backend/internal/http"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/handlers"
+	"github.com/VladislavDraga398/kanban-backend/internal/http/httputil"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
 )
 
@@ -318,6 +319,54 @@ func TestBoardCreateSuccess(t *testing.T) {
 	}
 	if resp.ID != "board-1" || resp.OwnerID != "owner-1" || resp.Name != "My board" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestBoardCreateRejectsUnknownField(t *testing.T) {
+	h := handlers.NewBoardHandler(&stubBoardRepo{})
+
+	r := chi.NewRouter()
+	r.Use(middleware.Auth([]byte(testSecret)))
+	r.Post("/api/v1/boards", h.Create)
+
+	token := mustToken(t, "owner-1")
+	rec := doJSONRequest(
+		r,
+		http.MethodPost,
+		"/api/v1/boards",
+		map[string]any{"name": "My board", "unexpected": "value"},
+		bearer(token),
+	)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "invalid json") {
+		t.Fatalf("expected invalid json message, got %q", rec.Body.String())
+	}
+}
+
+func TestBoardCreateRejectsOversizedBody(t *testing.T) {
+	h := handlers.NewBoardHandler(&stubBoardRepo{})
+
+	r := chi.NewRouter()
+	r.Use(middleware.Auth([]byte(testSecret)))
+	r.Post("/api/v1/boards", h.Create)
+
+	token := mustToken(t, "owner-1")
+	rec := doJSONRequest(
+		r,
+		http.MethodPost,
+		"/api/v1/boards",
+		map[string]string{"name": strings.Repeat("a", int(httputil.DefaultMaxJSONBodyBytes)+1)},
+		bearer(token),
+	)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "too large") {
+		t.Fatalf("expected too large message, got %q", rec.Body.String())
 	}
 }
 

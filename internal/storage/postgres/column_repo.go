@@ -76,11 +76,11 @@ func (r *ColumnRepository) Update(ctx context.Context, c *column.Column, ownerID
 		  AND c.board_id = $4
 		  AND b.id = c.board_id
 		  AND b.owner_id = $5
-		RETURNING c.updated_at;
+		RETURNING c.id, c.board_id, c.name, c.position, c.created_at, c.updated_at;
 	`
 
 	err := r.db.QueryRowContext(ctx, q, c.Name, c.Position, c.ID, c.BoardID, ownerID).
-		Scan(&c.UpdatedAt)
+		Scan(&c.ID, &c.BoardID, &c.Name, &c.Position, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return column.ErrNotFound
@@ -154,50 +154,33 @@ func (r *ColumnRepository) ListByBoardOwner(ctx context.Context, boardID, ownerI
 
 // CreateInBoard — создаёт колонку в доске конкретного пользователя.
 func (r *ColumnRepository) CreateInBoard(ctx context.Context, c *column.Column, boardID, ownerID string) error {
-	// 1) Проверяем, что доска существует и принадлежит ownerID.
-	const checkBoard = `
-		SELECT 1
-		FROM boards
-		WHERE id = $1 AND owner_id = $2;
+	const insert = `
+		WITH locked_board AS (
+			SELECT id
+			FROM boards
+			WHERE id = $1 AND owner_id = $2
+			FOR UPDATE
+		),
+		next_pos AS (
+			SELECT COALESCE(MAX(c.position) + 1, 1) AS pos
+			FROM columns c
+			JOIN locked_board lb ON c.board_id = lb.id
+		)
+		INSERT INTO columns (board_id, name, position)
+		SELECT lb.id, $3, np.pos
+		FROM locked_board lb
+		CROSS JOIN next_pos np
+		RETURNING id, board_id, name, position, created_at, updated_at;
 	`
 
-	var tmp int
-	err := r.db.QueryRowContext(ctx, checkBoard, boardID, ownerID).Scan(&tmp)
+	err := r.db.QueryRowContext(ctx, insert, boardID, ownerID, c.Name).
+		Scan(&c.ID, &c.BoardID, &c.Name, &c.Position, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// доска не найдена или не принадлежит этому пользователю
 			return column.ErrNotFound
 		}
 		return err
 	}
-
-	// 2) Находим следующую позицию в этой доске.
-	const getPos = `
-		SELECT COALESCE(MAX(position) + 1, 1)
-		FROM columns
-		WHERE board_id = $1;
-	`
-
-	var pos int
-	if err := r.db.QueryRowContext(ctx, getPos, boardID).Scan(&pos); err != nil {
-		return err
-	}
-
-	// 3) Вставляем колонку с рассчитанной позицией.
-	const insert = `
-		INSERT INTO columns (board_id, name, position)
-		VALUES ($1, $2, $3)
-		RETURNING id, created_at, updated_at;
-	`
-
-	err = r.db.QueryRowContext(ctx, insert, boardID, c.Name, pos).
-		Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
-		return err
-	}
-
-	c.BoardID = boardID
-	c.Position = pos
 
 	return nil
 }

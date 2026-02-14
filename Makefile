@@ -4,7 +4,7 @@ PKG ?= ./cmd/api
 GOCACHE ?= $(CURDIR)/.gocache
 GOENV = env GOCACHE=$(GOCACHE)
 
-.PHONY: help fmt vet tidy build clean run test test-integration cover db-up db-down migrate-up migrate-down docker-up docker-down docker-logs docker-rebuild
+.PHONY: help fmt vet tidy build clean run test test-integration cover db-up db-down migrate-up migrate-down docker-up docker-down docker-logs docker-rebuild frontend-install frontend-dev frontend-build frontend-lint frontend-test frontend-smoke
 
 ## fmt: форматирование кода
 fmt:
@@ -41,7 +41,7 @@ test-integration:
 
 ## cover: отчёт о покрытии тестами
 cover:
-	$(GOENV) $(GO) test ./... ./tests -coverprofile=coverage.out
+	$(GOENV) $(GO) test ./tests -coverpkg=./... -coverprofile=coverage.out
 	$(GOENV) $(GO) tool cover -func=coverage.out
 
 ## db-up: поднять Postgres через docker-compose
@@ -76,6 +76,30 @@ docker-logs:
 ## docker-rebuild: пересобрать и перезапустить приложение
 docker-rebuild:
 	docker compose up -d --build app
+
+## frontend-install: установить зависимости фронтенда
+frontend-install:
+	npm --prefix frontend install
+
+## frontend-dev: запустить фронтенд (Vite)
+frontend-dev:
+	npm --prefix frontend run dev
+
+## frontend-build: собрать фронтенд
+frontend-build:
+	npm --prefix frontend run build
+
+## frontend-lint: проверить фронтенд линтером
+frontend-lint:
+	npm --prefix frontend run lint
+
+## frontend-test: запустить frontend unit/integration тесты
+frontend-test:
+	npm --prefix frontend run test
+
+## frontend-smoke: fullstack smoke (frontend proxy + backend docker)
+frontend-smoke:
+	bash scripts/frontend-smoke.sh
 
 ## help: список команд Makefile
 help:

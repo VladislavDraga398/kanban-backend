@@ -2,6 +2,8 @@
 /bin
 /build
 /dist
+/api
+/kanban-backend
 *.exe
 *.exe~
 *.dll
@@ -23,12 +25,23 @@ coverage.*
 # Environment and local settings
 .env
 .env.*
+.envrc
+.direnv/
 .vscode
 .idea
 .cache/
 .cache/go-build/
 .cache/go-mod/
 .gocache/
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Local editor/temp files
+*.swp
+*.swo
+*~
+tmp/
+*.pid
 
 # OS files
 .DS_Store

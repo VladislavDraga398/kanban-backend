@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -12,25 +12,30 @@ import (
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/board"
 	"github.com/VladislavDraga398/kanban-backend/internal/http/httputil"
-	"github.com/VladislavDraga398/kanban-backend/internal/http/middleware"
 )
 
-// BoardHandler отвечает за операции с досками (boards).
+// BoardHandler обрабатывает эндпоинты досок.
 type BoardHandler struct {
-	boards board.Repository
+	boards boardStore
 }
 
-// NewBoardHandler конструирует хэндлер досок.
-func NewBoardHandler(boards board.Repository) *BoardHandler {
+// NewBoardHandler создаёт хендлер досок.
+func NewBoardHandler(boards boardStore) *BoardHandler {
 	return &BoardHandler{boards: boards}
 }
 
-// createBoardRequest — тело запроса при создании/обновлении доски.
+type boardStore interface {
+	ListByOwnerID(ctx context.Context, ownerID string) ([]*board.Board, error)
+	GetByID(ctx context.Context, id, ownerID string) (*board.Board, error)
+	Create(ctx context.Context, b *board.Board) error
+	Update(ctx context.Context, b *board.Board) error
+	Delete(ctx context.Context, id, ownerID string) error
+}
+
 type createBoardRequest struct {
 	Name string `json:"name"`
 }
 
-// boardResponse — то, что мы отдаём наружу клиенту.
 type boardResponse struct {
 	ID        string    `json:"id"`
 	OwnerID   string    `json:"owner_id"`
@@ -39,7 +44,6 @@ type boardResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// writeBoard — маппинг доменной модели в DTO для ответа.
 func writeBoard(b *board.Board) boardResponse {
 	return boardResponse{
 		ID:        b.ID,
@@ -50,11 +54,10 @@ func writeBoard(b *board.Board) boardResponse {
 	}
 }
 
-// List возвращает все доски пользователя. GET /api/v1/boards
+// List обрабатывает GET /api/v1/boards.
 func (h *BoardHandler) List(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -73,11 +76,10 @@ func (h *BoardHandler) List(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Get возвращает доску по её ID. GET /api/v1/boards/{id}
+// Get обрабатывает GET /api/v1/boards/{id}.
 func (h *BoardHandler) Get(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -102,17 +104,15 @@ func (h *BoardHandler) Get(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Create создаёт новую доску. POST /api/v1/boards
+// Create обрабатывает POST /api/v1/boards.
 func (h *BoardHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	var req createBoardRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -137,11 +137,10 @@ func (h *BoardHandler) Create(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusCreated, resp)
 }
 
-// Update обновляет название доски. PUT /api/v1/boards/{id}
+// Update обрабатывает PUT /api/v1/boards/{id}.
 func (h *BoardHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -152,8 +151,7 @@ func (h *BoardHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createBoardRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid json")
+	if !httputil.DecodeJSONOrError(w, r, &req, httputil.DefaultMaxJSONBodyBytes) {
 		return
 	}
 
@@ -163,7 +161,6 @@ func (h *BoardHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Собираем доменную модель для репозитория
 	b := &board.Board{
 		ID:      boardID,
 		OwnerID: userID,
@@ -184,11 +181,10 @@ func (h *BoardHandler) Update(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
-// Delete удаляет доску. DELETE /api/v1/boards/{id}
+// Delete обрабатывает DELETE /api/v1/boards/{id}.
 func (h *BoardHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		httputil.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -208,6 +204,5 @@ func (h *BoardHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Для DELETE обычно 204 No Content без тела
 	w.WriteHeader(http.StatusNoContent)
 }

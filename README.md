@@ -57,6 +57,33 @@ make run
 curl -s http://localhost:8083/healthz
 ```
 
+## Frontend (React + Vite)
+Во фронтенде реализован полный пользовательский поток:
+- регистрация и логин;
+- список досок (создание/переименование/удаление);
+- экран доски: колонки и задачи (CRUD);
+- drag-and-drop задач между колонками (через `PATCH /move`).
+
+Запуск фронтенда:
+```bash
+make frontend-install
+make frontend-dev
+```
+
+По умолчанию фронтенд доступен на `http://localhost:5173` и ходит в backend через Vite proxy (`/api/* -> http://localhost:8083`).
+
+Сборка фронтенда:
+```bash
+make frontend-build
+```
+
+Проверки фронтенда:
+```bash
+make frontend-lint
+make frontend-test
+make frontend-smoke
+```
+
 ## Конфигурация (переменные окружения)
 - `HTTP_PORT` — порт HTTP (по умолчанию `8083`).
 - `DB_DSN` — строка подключения к Postgres:
@@ -78,6 +105,7 @@ JWT_TTL=24h
 Примечания:
 - Рабочие файлы с секретами (`env/*.env`) не коммитим. В репозитории добавлен `env/.gitignore`, который игнорирует реальные `*.env` и оставляет только примеры `*.example.env`.
 - Команда `make run` загружает переменные из `env/dev.env`, затем из `.env` (если существуют), и запускает приложение.
+- При невалидных значениях `HTTP_PORT` / `JWT_TTL` или пустом `JWT_SECRET` приложение завершится с явной ошибкой конфигурации при старте.
 
 ## Сборка
 ```bash
@@ -110,6 +138,9 @@ make migrate-up      # применить миграции через psql к DB
 make test            # все тесты (нужен Docker для интеграции)
 make test-integration# только интеграционный сценарий
 make cover           # отчёт о покрытии тестами
+go test -race ./... ./tests # проверка гонок
+make frontend-test   # unit/integration тесты frontend (Vitest)
+make frontend-smoke  # fullstack smoke: frontend proxy + backend в Docker
 ```
 
 **Примечание:** Docker Compose автоматически применяет миграции при старте БД (`migrations/` монтируются в `/docker-entrypoint-init-db.d`).
@@ -138,14 +169,47 @@ curl -s -X POST http://localhost:8083/api/v1/auth/login \
 - `GET/POST /api/v1/boards/{board_id}/columns/{column_id}/tasks`, `PUT/DELETE /api/v1/boards/{board_id}/columns/{column_id}/tasks/{task_id}`
 - `PATCH /api/v1/boards/{board_id}/tasks/{task_id}/move`
 
+## Валидация JSON
+- Все write-эндпоинты (`POST/PUT/PATCH`) используют строгий JSON-декодер:
+  - неизвестные поля отклоняются;
+  - несколько JSON-объектов в одном body отклоняются;
+  - размер body ограничен (1 MiB).
+
 ## Тесты
 - Все тесты: `make test` (для интеграционных тестов требуется Docker, контейнер Postgres поднимется автоматически через testcontainers).
 - Только интеграция: `make test-integration`.
 - Покрытие: `make cover`.
+- Frontend unit/integration: `make frontend-test`.
+- Fullstack smoke (frontend + backend + docker): `make frontend-smoke`.
+
+## Quality Gate (перед PR)
+Минимальный набор локальных проверок:
+
+```bash
+make build
+make test
+go test -race ./... ./tests
+make cover
+make frontend-lint
+make frontend-test
+make frontend-build
+```
+
+## Надёжность Runtime
+- Корректный graceful shutdown по `SIGINT/SIGTERM`.
+- Валидация конфига на старте (ошибка вместо panic):
+  - `JWT_SECRET` обязателен;
+  - `HTTP_PORT` должен быть валидным портом;
+  - `JWT_TTL` должен быть валидным `time.Duration` и `> 0`.
+- В роутере включены базовые middleware:
+  - `RequestID`;
+  - `Recoverer`;
+  - `Timeout` (30s).
 
 ## Остановка сервисов
 ```bash
-make db-down
+make db-down      # остановить только БД
+make docker-down  # остановить весь стек
 ```
 
 ## Примечания

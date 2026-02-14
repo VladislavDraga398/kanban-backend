@@ -3,8 +3,10 @@ package config
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,15 +18,20 @@ type Config struct {
 	JWTTTL    time.Duration
 }
 
-func Load() *Config {
-	// Try to load environment from local files if running outside Makefile/docker.
-	// Non-fatal: we only set variables that are currently missing.
-	_ = loadEnvFiles()
+func Load() (*Config, error) {
+	// Пробуем загрузить переменные из локальных env-файлов.
+	// Ошибка нефатальная для отсутствующих файлов: подставляем только отсутствующие переменные.
+	if err := loadEnvFiles(); err != nil {
+		return nil, fmt.Errorf("load env files: %w", err)
+	}
 
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {
-		// тут ставим твой дефолтный порт
 		port = "8083"
+	}
+	portNum, err := strconv.Atoi(port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		return nil, fmt.Errorf("invalid HTTP_PORT: %q", port)
 	}
 
 	dsn := os.Getenv("DB_DSN")
@@ -32,32 +39,37 @@ func Load() *Config {
 		dsn = "postgres://kanban:kanban@localhost:5432/kanban?sslmode=disable"
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
 	if jwtSecret == "" {
-		panic("JWT_SECRET is required")
+		return nil, errors.New("JWT_SECRET is required")
 	}
 
 	ttl := 24 * time.Hour
 	if ttlStr := os.Getenv("JWT_TTL"); ttlStr != "" {
-		if parsed, err := time.ParseDuration(ttlStr); err == nil {
-			ttl = parsed
+		parsed, err := time.ParseDuration(ttlStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JWT_TTL: %w", err)
 		}
+		ttl = parsed
+	}
+	if ttl <= 0 {
+		return nil, errors.New("JWT_TTL must be greater than 0")
 	}
 
 	return &Config{
-		HTTPAddr:  ":" + port, // вот тут формируется ":8083"
+		HTTPAddr:  ":" + port,
 		DBDSN:     dsn,
 		JWTSecret: jwtSecret,
 		JWTTTL:    ttl,
-	}
+	}, nil
 }
 
-// loadEnvFiles loads variables from .env and env/dev.env files if they exist.
-// It will NOT override variables that are already present in the environment.
+// loadEnvFiles загружает переменные из .env и env/dev.env, если файлы существуют.
+// Уже заданные в окружении переменные не перезаписываются.
 func loadEnvFiles() error {
 	var firstErr error
 
-	// Check current working directory and a couple of common locations.
+	// Проверяем текущую директорию и стандартный путь проекта.
 	candidates := []string{
 		".env",
 		filepath.Join("env", "dev.env"),
@@ -65,7 +77,7 @@ func loadEnvFiles() error {
 
 	for _, p := range candidates {
 		if err := loadEnvFile(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			// keep the first non-not-exist error
+			// Сохраняем первую ошибку, кроме "файл не существует".
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -87,7 +99,7 @@ func loadEnvFile(path string) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// simple KEY=VALUE parser, no quotes handling
+		// Простой парсер KEY=VALUE без обработки кавычек.
 		if eq := strings.IndexByte(line, '='); eq != -1 {
 			key := strings.TrimSpace(line[:eq])
 			val := strings.TrimSpace(line[eq+1:])

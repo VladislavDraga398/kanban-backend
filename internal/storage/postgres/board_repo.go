@@ -92,11 +92,11 @@ func (r *BoardRepository) Update(ctx context.Context, b *board.Board) error {
         UPDATE boards
         SET name = $1, updated_at = NOW()
         WHERE id = $2 AND owner_id = $3
-        RETURNING updated_at;
+        RETURNING id, owner_id, name, created_at, updated_at;
     `
 
 	err := r.db.QueryRowContext(ctx, q, b.Name, b.ID, b.OwnerID).
-		Scan(&b.UpdatedAt)
+		Scan(&b.ID, &b.OwnerID, &b.Name, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return board.ErrNotFound
