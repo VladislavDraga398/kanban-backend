@@ -11,6 +11,12 @@ type Task struct {
 	ColumnID    string
 	Title       string
 	Description string
+	Priority    string
+	PrioritySet bool
+	Labels      []string
+	LabelsSet   bool
+	DueDate     *time.Time
+	DueDateSet  bool
 	Position    int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

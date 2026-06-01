@@ -25,12 +25,17 @@ export type Column = {
   updated_at: string
 }
 
+export type TaskPriority = 'low' | 'normal' | 'high'
+
 export type Task = {
   id: string
   board_id: string
   column_id: string
   title: string
   description: string
+  priority: TaskPriority
+  labels: string[]
+  due_date: string | null
   position: number
   created_at: string
   updated_at: string

@@ -1,5 +1,5 @@
 import { apiClient } from '../../shared/api/client'
-import type { Column, Task } from '../../shared/api/types'
+import type { Column, Task, TaskPriority } from '../../shared/api/types'
 
 type CreateColumnPayload = {
   boardId: string
@@ -22,6 +22,9 @@ type CreateTaskPayload = {
   columnId: string
   title: string
   description: string
+  priority?: TaskPriority
+  labels?: string[]
+  dueDate?: string
 }
 
 type UpdateTaskPayload = {
@@ -30,6 +33,9 @@ type UpdateTaskPayload = {
   taskId: string
   title: string
   description: string
+  priority?: TaskPriority
+  labels?: string[]
+  dueDate?: string
 }
 
 type DeleteTaskPayload = {
@@ -83,6 +89,9 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
     {
       title: payload.title,
       description: payload.description,
+      priority: payload.priority,
+      labels: payload.labels,
+      due_date: payload.dueDate,
     },
   )
   return data
@@ -94,6 +103,9 @@ export async function updateTask(payload: UpdateTaskPayload): Promise<Task> {
     {
       title: payload.title,
       description: payload.description,
+      priority: payload.priority,
+      labels: payload.labels,
+      due_date: payload.dueDate,
     },
   )
   return data

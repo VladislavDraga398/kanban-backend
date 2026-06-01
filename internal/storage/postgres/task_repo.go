@@ -3,10 +3,60 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"github.com/VladislavDraga398/kanban-backend/internal/domain/task"
 )
+
+type sqlScanner interface {
+	Scan(dest ...any) error
+}
+
+func labelsJSON(labels []string) (string, error) {
+	if labels == nil {
+		labels = []string{}
+	}
+	b, err := json.Marshal(labels)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func scanTask(s sqlScanner, t *task.Task) error {
+	var (
+		labelsRaw string
+		dueDate   sql.NullTime
+	)
+	if err := s.Scan(
+		&t.ID,
+		&t.BoardID,
+		&t.ColumnID,
+		&t.Title,
+		&t.Description,
+		&t.Priority,
+		&labelsRaw,
+		&dueDate,
+		&t.Position,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	); err != nil {
+		return err
+	}
+	if err := json.Unmarshal([]byte(labelsRaw), &t.Labels); err != nil {
+		return err
+	}
+	if t.Labels == nil {
+		t.Labels = []string{}
+	}
+	if dueDate.Valid {
+		t.DueDate = &dueDate.Time
+	} else {
+		t.DueDate = nil
+	}
+	return nil
+}
 
 // TaskRepository — реализация task.Repository поверх *sql.DB.
 type TaskRepository struct {
@@ -27,17 +77,26 @@ func (r *TaskRepository) Create(ctx context.Context, t *task.Task) error {
 	}
 
 	const insert = `
-		INSERT INTO tasks (board_id, column_id, title, description, position)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at;
+		INSERT INTO tasks (board_id, column_id, title, description, priority, labels, due_date, position)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+		RETURNING id, board_id, column_id, title, description, priority, labels::text, due_date, position, created_at, updated_at;
 	`
 
-	if err := r.db.QueryRowContext(ctx, insert, t.BoardID, t.ColumnID, t.Title, t.Description, pos).
-		Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	labels, err := labelsJSON(t.Labels)
+	if err != nil {
+		return err
+	}
+	if t.Priority == "" {
+		t.Priority = "normal"
+	}
+
+	if err := scanTask(
+		r.db.QueryRowContext(ctx, insert, t.BoardID, t.ColumnID, t.Title, t.Description, t.Priority, labels, t.DueDate, pos),
+		t,
+	); err != nil {
 		return err
 	}
 
-	t.Position = pos
 	return nil
 }
 
@@ -45,7 +104,7 @@ func (r *TaskRepository) Create(ctx context.Context, t *task.Task) error {
 func (r *TaskRepository) ListByBoard(ctx context.Context, boardID string) ([]task.Task, error) {
 	const (
 		q = `
-		SELECT id, board_id, column_id, title, description, position, created_at, updated_at
+		SELECT id, board_id, column_id, title, description, priority, labels::text, due_date, position, created_at, updated_at
 		FROM tasks
 		WHERE board_id = $1
 		ORDER BY position, created_at;
@@ -60,16 +119,7 @@ func (r *TaskRepository) ListByBoard(ctx context.Context, boardID string) ([]tas
 	var res []task.Task
 	for rows.Next() {
 		var t task.Task
-		if err := rows.Scan(
-			&t.ID,
-			&t.BoardID,
-			&t.ColumnID,
-			&t.Title,
-			&t.Description,
-			&t.Position,
-			&t.CreatedAt,
-			&t.UpdatedAt,
-		); err != nil {
+		if err := scanTask(rows, &t); err != nil {
 			return nil, err
 		}
 		res = append(res, t)
@@ -85,7 +135,7 @@ func (r *TaskRepository) ListByBoard(ctx context.Context, boardID string) ([]tas
 // ListByColumn — все задачи колонки.
 func (r *TaskRepository) ListByColumn(ctx context.Context, columnID string) ([]task.Task, error) {
 	const q = `
-		SELECT id, board_id, column_id, title, description, position, created_at, updated_at
+		SELECT id, board_id, column_id, title, description, priority, labels::text, due_date, position, created_at, updated_at
 		FROM tasks
 		WHERE column_id = $1
 		ORDER BY position, created_at;
@@ -100,16 +150,7 @@ func (r *TaskRepository) ListByColumn(ctx context.Context, columnID string) ([]t
 	var res []task.Task
 	for rows.Next() {
 		var t task.Task
-		if err := rows.Scan(
-			&t.ID,
-			&t.BoardID,
-			&t.ColumnID,
-			&t.Title,
-			&t.Description,
-			&t.Position,
-			&t.CreatedAt,
-			&t.UpdatedAt,
-		); err != nil {
+		if err := scanTask(rows, &t); err != nil {
 			return nil, err
 		}
 		res = append(res, t)
@@ -129,36 +170,40 @@ func (r *TaskRepository) Update(ctx context.Context, t *task.Task, ownerID strin
 		SET column_id = $1,
 		    title = $2,
 		    description = $3,
-		    position = COALESCE(NULLIF($4, 0), t.position),
+		    priority = CASE WHEN $4 THEN $5 ELSE t.priority END,
+		    labels = CASE WHEN $6 THEN $7::jsonb ELSE t.labels END,
+		    due_date = CASE WHEN $8 THEN $9 ELSE t.due_date END,
+		    position = COALESCE(NULLIF($10, 0), t.position),
 		    updated_at = NOW()
 		FROM boards b
-		WHERE t.id = $5
-		  AND t.board_id = $6
+		WHERE t.id = $11
+		  AND t.board_id = $12
 		  AND b.id = t.board_id
-		  AND b.owner_id = $7
-		RETURNING t.id, t.board_id, t.column_id, t.title, t.description, t.position, t.created_at, t.updated_at;
+		  AND b.owner_id = $13
+		RETURNING t.id, t.board_id, t.column_id, t.title, t.description, t.priority, t.labels::text, t.due_date, t.position, t.created_at, t.updated_at;
 	`
 
-	if err := r.db.QueryRowContext(
-		ctx,
-		q,
+	labels, err := labelsJSON(t.Labels)
+	if err != nil {
+		return err
+	}
+
+	if err := scanTask(r.db.QueryRowContext(
+		ctx, q,
 		t.ColumnID,
 		t.Title,
 		t.Description,
+		t.PrioritySet,
+		t.Priority,
+		t.LabelsSet,
+		labels,
+		t.DueDateSet,
+		t.DueDate,
 		t.Position,
 		t.ID,
 		t.BoardID,
 		ownerID,
-	).Scan(
-		&t.ID,
-		&t.BoardID,
-		&t.ColumnID,
-		&t.Title,
-		&t.Description,
-		&t.Position,
-		&t.CreatedAt,
-		&t.UpdatedAt,
-	); err != nil {
+	), t); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return task.ErrNotFound
 		}
@@ -209,6 +254,9 @@ func (r *TaskRepository) ListByColumnOwner(ctx context.Context, boardID, columnI
 		       t.column_id,
 		       t.title,
 		       t.description,
+		       t.priority,
+		       t.labels::text,
+		       t.due_date,
 		       t.position,
 		       t.created_at,
 		       t.updated_at
@@ -229,16 +277,7 @@ func (r *TaskRepository) ListByColumnOwner(ctx context.Context, boardID, columnI
 	var res []*task.Task
 	for rows.Next() {
 		var tt task.Task
-		if err := rows.Scan(
-			&tt.ID,
-			&tt.BoardID,
-			&tt.ColumnID,
-			&tt.Title,
-			&tt.Description,
-			&tt.Position,
-			&tt.CreatedAt,
-			&tt.UpdatedAt,
-		); err != nil {
+		if err := scanTask(rows, &tt); err != nil {
 			return nil, err
 		}
 		res = append(res, &tt)
@@ -268,24 +307,25 @@ func (r *TaskRepository) CreateInColumn(ctx context.Context, t *task.Task, board
 			FROM tasks t
 			JOIN locked_column lc ON t.column_id = lc.id
 		)
-		INSERT INTO tasks (board_id, column_id, title, description, position)
-		SELECT lc.board_id, lc.id, $4, $5, np.pos
+		INSERT INTO tasks (board_id, column_id, title, description, priority, labels, due_date, position)
+		SELECT lc.board_id, lc.id, $4, $5, $6, $7::jsonb, $8, np.pos
 		FROM locked_column lc
 		CROSS JOIN next_pos np
-		RETURNING id, board_id, column_id, title, description, position, created_at, updated_at;
+		RETURNING id, board_id, column_id, title, description, priority, labels::text, due_date, position, created_at, updated_at;
 	`
 
-	if err := r.db.QueryRowContext(ctx, insert, columnID, boardID, ownerID, t.Title, t.Description).
-		Scan(
-			&t.ID,
-			&t.BoardID,
-			&t.ColumnID,
-			&t.Title,
-			&t.Description,
-			&t.Position,
-			&t.CreatedAt,
-			&t.UpdatedAt,
-		); err != nil {
+	labels, err := labelsJSON(t.Labels)
+	if err != nil {
+		return err
+	}
+	if t.Priority == "" {
+		t.Priority = "normal"
+	}
+
+	if err := scanTask(
+		r.db.QueryRowContext(ctx, insert, columnID, boardID, ownerID, t.Title, t.Description, t.Priority, labels, t.DueDate),
+		t,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return task.ErrNotFound
 		}
@@ -324,7 +364,7 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 
 	// 2) Прочитать задачу и залочить строку для корректного удаления из старой колонки.
 	const selTask = `
-        SELECT id, board_id, column_id, position, title, description, created_at, updated_at
+        SELECT id, board_id, column_id, position, title, description, priority, labels::text, due_date, created_at, updated_at
         FROM tasks
         WHERE id = $1 AND board_id = $2
         FOR UPDATE;
@@ -333,10 +373,11 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		curID, curBoardID, curColumnID string
 		curPos                         int
 	)
-	var title, description string
+	var title, description, priority, labelsRaw string
 	var createdAt, updatedAt sql.NullTime
+	var dueDate sql.NullTime
 	if err := tx.QueryRowContext(ctx, selTask, t.ID, t.BoardID).Scan(
-		&curID, &curBoardID, &curColumnID, &curPos, &title, &description, &createdAt, &updatedAt,
+		&curID, &curBoardID, &curColumnID, &curPos, &title, &description, &priority, &labelsRaw, &dueDate, &createdAt, &updatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = tx.Rollback()
@@ -353,6 +394,17 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
 		t.ColumnID = curColumnID
 		t.Title = title
 		t.Description = description
+		t.Priority = priority
+		if err := json.Unmarshal([]byte(labelsRaw), &t.Labels); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if t.Labels == nil {
+			t.Labels = []string{}
+		}
+		if dueDate.Valid {
+			t.DueDate = &dueDate.Time
+		}
 		t.Position = curPos
 		if createdAt.Valid {
 			t.CreatedAt = createdAt.Time
@@ -411,18 +463,9 @@ func (r *TaskRepository) MoveToColumn(ctx context.Context, t *task.Task, newColu
             position  = $2,
             updated_at = NOW()
         WHERE id = $3 AND board_id = $4
-        RETURNING id, board_id, column_id, title, description, position, created_at, updated_at;
+        RETURNING id, board_id, column_id, title, description, priority, labels::text, due_date, position, created_at, updated_at;
     `
-	if err := tx.QueryRowContext(ctx, updTask, newColumnID, newPos, curID, curBoardID).Scan(
-		&t.ID,
-		&t.BoardID,
-		&t.ColumnID,
-		&t.Title,
-		&t.Description,
-		&t.Position,
-		&t.CreatedAt,
-		&t.UpdatedAt,
-	); err != nil {
+	if err := scanTask(tx.QueryRowContext(ctx, updTask, newColumnID, newPos, curID, curBoardID), t); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = tx.Rollback()
 			return task.ErrNotFound

@@ -404,6 +404,64 @@ func TestTaskCreateValidation(t *testing.T) {
 	}
 }
 
+func TestTaskCreateWithMetadata(t *testing.T) {
+	h := handlers.NewTaskHandler(&stubTaskRepo{
+		createInColumnFn: func(ctx context.Context, createdTask *task.Task, boardID, columnID, ownerID string) error {
+			if createdTask.Priority != "high" {
+				t.Fatalf("expected high priority, got %q", createdTask.Priority)
+			}
+			if len(createdTask.Labels) != 2 || createdTask.Labels[0] != "frontend" || createdTask.Labels[1] != "urgent" {
+				t.Fatalf("unexpected labels: %#v", createdTask.Labels)
+			}
+			if createdTask.DueDate == nil || createdTask.DueDate.Format("2006-01-02") != "2026-06-10" {
+				t.Fatalf("unexpected due date: %v", createdTask.DueDate)
+			}
+			createdTask.ID = "task-1"
+			createdTask.BoardID = boardID
+			createdTask.ColumnID = columnID
+			createdTask.Position = 1
+			createdTask.CreatedAt = time.Unix(1, 0)
+			createdTask.UpdatedAt = time.Unix(1, 0)
+			return nil
+		},
+	})
+
+	r := chi.NewRouter()
+	r.Use(middleware.Auth([]byte(testSecret)))
+	r.Post("/api/v1/boards/{board_id}/columns/{column_id}/tasks", h.Create)
+
+	token := mustToken(t, "owner-1")
+	rec := doJSONRequest(
+		r,
+		http.MethodPost,
+		"/api/v1/boards/b1/columns/c1/tasks",
+		map[string]any{
+			"title":       "Task",
+			"description": "desc",
+			"priority":    "high",
+			"labels":      []string{"frontend", "urgent"},
+			"due_date":    "2026-06-10",
+		},
+		bearer(token),
+	)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rec.Code)
+	}
+
+	var resp struct {
+		Priority string   `json:"priority"`
+		Labels   []string `json:"labels"`
+		DueDate  string   `json:"due_date"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Priority != "high" || len(resp.Labels) != 2 || resp.DueDate != "2026-06-10" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
 func TestTaskMoveSuccessThroughRouter(t *testing.T) {
 	taskRepo := &stubTaskRepo{
 		moveFn: func(ctx context.Context, t *task.Task, columnID, ownerID string) error {
