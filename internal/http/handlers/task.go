@@ -33,8 +33,11 @@ type taskStore interface {
 }
 
 type createTaskRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Priority    *string  `json:"priority"`
+	Labels      []string `json:"labels"`
+	DueDate     *string  `json:"due_date"`
 }
 
 type moveTaskRequest struct {
@@ -47,22 +50,104 @@ type taskResponse struct {
 	ColumnID    string    `json:"column_id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
+	Priority    string    `json:"priority"`
+	Labels      []string  `json:"labels"`
+	DueDate     *string   `json:"due_date"`
 	Position    int       `json:"position"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func writeTask(t *task.Task) taskResponse {
+	var dueDate *string
+	if t.DueDate != nil {
+		formatted := t.DueDate.Format("2006-01-02")
+		dueDate = &formatted
+	}
+	labels := t.Labels
+	if labels == nil {
+		labels = []string{}
+	}
+
 	return taskResponse{
 		ID:          t.ID,
 		BoardID:     t.BoardID,
 		ColumnID:    t.ColumnID,
 		Title:       t.Title,
 		Description: t.Description,
+		Priority:    t.Priority,
+		Labels:      labels,
+		DueDate:     dueDate,
 		Position:    t.Position,
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   t.UpdatedAt,
 	}
+}
+
+func normalizePriority(priority *string, defaultWhenMissing bool) (string, bool, bool) {
+	if priority == nil {
+		if defaultWhenMissing {
+			return "normal", true, true
+		}
+		return "", false, true
+	}
+
+	trimmed := strings.TrimSpace(*priority)
+	if trimmed == "" {
+		if defaultWhenMissing {
+			return "normal", true, true
+		}
+		return "", false, true
+	}
+
+	switch trimmed {
+	case "low", "normal", "high":
+		return trimmed, true, true
+	default:
+		return "", false, false
+	}
+}
+
+func normalizeLabels(labels []string) []string {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(labels))
+	out := make([]string, 0, len(labels))
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		if label == "" {
+			continue
+		}
+		if len([]rune(label)) > 24 {
+			label = string([]rune(label)[:24])
+		}
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		out = append(out, label)
+		if len(out) == 5 {
+			break
+		}
+	}
+	return out
+}
+
+func parseDueDate(value *string) (*time.Time, bool, error) {
+	if value == nil {
+		return nil, false, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, true, nil
+	}
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return nil, true, err
+	}
+	return &parsed, true, nil
 }
 
 // List обрабатывает GET /api/v1/boards/{board_id}/columns/{column_id}/tasks.
@@ -115,6 +200,16 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	req.Title = strings.TrimSpace(req.Title)
 	req.Description = strings.TrimSpace(req.Description)
+	priority, prioritySet, ok := normalizePriority(req.Priority, true)
+	if !ok {
+		httputil.Error(w, http.StatusBadRequest, "priority must be low, normal or high")
+		return
+	}
+	dueDate, dueDateSet, err := parseDueDate(req.DueDate)
+	if err != nil {
+		httputil.Error(w, http.StatusBadRequest, "due_date must be YYYY-MM-DD")
+		return
+	}
 
 	if req.Title == "" {
 		httputil.Error(w, http.StatusBadRequest, "title is required")
@@ -124,6 +219,12 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	t := &task.Task{
 		Title:       req.Title,
 		Description: req.Description,
+		Priority:    priority,
+		PrioritySet: prioritySet,
+		Labels:      normalizeLabels(req.Labels),
+		LabelsSet:   req.Labels != nil,
+		DueDate:     dueDate,
+		DueDateSet:  dueDateSet,
 	}
 
 	if err := h.tasks.CreateInColumn(r.Context(), t, boardID, columnID, userID); err != nil {
@@ -163,6 +264,16 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	req.Title = strings.TrimSpace(req.Title)
 	req.Description = strings.TrimSpace(req.Description)
+	priority, prioritySet, ok := normalizePriority(req.Priority, false)
+	if !ok {
+		httputil.Error(w, http.StatusBadRequest, "priority must be low, normal or high")
+		return
+	}
+	dueDate, dueDateSet, err := parseDueDate(req.DueDate)
+	if err != nil {
+		httputil.Error(w, http.StatusBadRequest, "due_date must be YYYY-MM-DD")
+		return
+	}
 	if req.Title == "" {
 		httputil.Error(w, http.StatusBadRequest, "title is required")
 		return
@@ -174,6 +285,12 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 		ColumnID:    columnID,
 		Title:       req.Title,
 		Description: req.Description,
+		Priority:    priority,
+		PrioritySet: prioritySet,
+		Labels:      normalizeLabels(req.Labels),
+		LabelsSet:   req.Labels != nil,
+		DueDate:     dueDate,
+		DueDateSet:  dueDateSet,
 	}
 
 	if err := h.tasks.Update(r.Context(), t, userID); err != nil {

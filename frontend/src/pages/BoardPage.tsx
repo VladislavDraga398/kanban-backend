@@ -21,15 +21,37 @@ import {
 } from '../features/board/api'
 import { getBoard } from '../features/boards/api'
 import { getErrorMessage } from '../shared/api/errors'
-import type { Column, Task } from '../shared/api/types'
+import type { Column, Task, TaskPriority } from '../shared/api/types'
 
 type TaskDraft = {
   title: string
   description: string
+  priority: TaskPriority
+  labels: string
+  dueDate: string
+}
+
+const emptyTaskDraft: TaskDraft = {
+  title: '',
+  description: '',
+  priority: 'normal',
+  labels: '',
+  dueDate: '',
+}
+
+function labelsToText(labels: string[]) {
+  return labels.join(', ')
+}
+
+function parseLabels(value: string) {
+  return value
+    .split(',')
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .slice(0, 5)
 }
 
 type ColumnCardProps = {
-  boardId: string
   column: Column
   tasks: Task[]
   taskLoading: boolean
@@ -43,8 +65,28 @@ type ColumnCardProps = {
   onDeleteTask: (task: Task) => void
 }
 
+function formatBoardDate(value?: string) {
+  if (!value) {
+    return '...'
+  }
+  return new Date(value).toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+  })
+}
+
+function ColumnSkeleton() {
+  return (
+    <section className="column-card column-card--skeleton" aria-label="Загрузка колонки">
+      <div className="skeleton-line skeleton-line--wide" />
+      <div className="skeleton-line" />
+      <div className="skeleton-card" />
+      <div className="skeleton-card skeleton-card--short" />
+    </section>
+  )
+}
+
 function ColumnCard({
-  boardId,
   column,
   tasks,
   taskLoading,
@@ -58,23 +100,33 @@ function ColumnCard({
   onDeleteTask,
 }: ColumnCardProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id })
+  const hasTasks = tasks.length > 0
 
   return (
-    <section className={`column-card ${isOver ? 'is-over' : ''}`} ref={setNodeRef}>
+    <section
+      className={`column-card ${isOver ? 'is-over' : ''} ${hasTasks ? '' : 'is-empty'}`}
+      ref={setNodeRef}
+    >
       <header className="column-card__header">
-        <div>
+        <div className="column-card__title">
           <h3>{column.name}</h3>
-          <p>{tasks.length} задач</p>
+          <span>{tasks.length} задач</span>
         </div>
         <div className="column-card__header-actions">
-          <button type="button" className="ghost-button" onClick={() => onEditColumn(column)}>
-            Имя
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => onEditColumn(column)}
+            title="Переименовать колонку"
+          >
+            Править
           </button>
           <button
             type="button"
             className="danger-button"
             onClick={() => onDeleteColumn(column)}
             disabled={busy}
+            title="Удалить колонку"
           >
             Удалить
           </button>
@@ -88,10 +140,15 @@ function ColumnCard({
           onCreateTask(column.id)
         }}
       >
+        <div className="task-create-form__top">
+          <span>Быстрая задача</span>
+          <span>{draft.title.trim().length}/120</span>
+        </div>
         <input
           type="text"
           placeholder="Новая задача"
           value={draft.title}
+          maxLength={120}
           onChange={(event) => onDraftChange(column.id, { title: event.target.value })}
         />
         <textarea
@@ -100,14 +157,49 @@ function ColumnCard({
           onChange={(event) => onDraftChange(column.id, { description: event.target.value })}
           rows={2}
         />
+        <div className="task-create-form__meta">
+          <select
+            value={draft.priority}
+            onChange={(event) =>
+              onDraftChange(column.id, { priority: event.target.value as TaskPriority })
+            }
+            aria-label="Приоритет задачи"
+          >
+            <option value="low">Низкий</option>
+            <option value="normal">Обычный</option>
+            <option value="high">Высокий</option>
+          </select>
+          <input
+            type="date"
+            value={draft.dueDate}
+            onChange={(event) => onDraftChange(column.id, { dueDate: event.target.value })}
+            aria-label="Срок задачи"
+          />
+        </div>
+        <input
+          type="text"
+          placeholder="Метки через запятую"
+          value={draft.labels}
+          onChange={(event) => onDraftChange(column.id, { labels: event.target.value })}
+        />
         <button type="submit" className="primary-button" disabled={busy}>
           Добавить задачу
         </button>
       </form>
 
       <div className="task-list">
-        {taskLoading && <p className="hint-text">Загружаю задачи...</p>}
-        {!taskLoading && tasks.length === 0 && <p className="hint-text">Пусто</p>}
+        {taskLoading && (
+          <div className="task-list__loading" aria-label="Загружаю задачи">
+            <div className="skeleton-card skeleton-card--short" />
+            <div className="skeleton-card" />
+          </div>
+        )}
+        {!taskLoading && tasks.length === 0 && (
+          <div className="empty-column">
+            <strong>Пока пусто</strong>
+            <span>Создай первую карточку в этом потоке.</span>
+          </div>
+        )}
         {tasks.map((task) => (
           <DraggableTaskCard
             key={task.id}
@@ -119,7 +211,10 @@ function ColumnCard({
         ))}
       </div>
 
-      <p className="column-id">#{boardId.slice(0, 4)} · {column.id.slice(0, 6)}</p>
+      <footer className="column-card__footer">
+        <span>Обновлена {formatBoardDate(column.updated_at)}</span>
+        <span>#{column.id.slice(0, 6)}</span>
+      </footer>
     </section>
   )
 }
@@ -135,6 +230,9 @@ export function BoardPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingTaskTitle, setEditingTaskTitle] = useState('')
   const [editingTaskDescription, setEditingTaskDescription] = useState('')
+  const [editingTaskPriority, setEditingTaskPriority] = useState<TaskPriority>('normal')
+  const [editingTaskLabels, setEditingTaskLabels] = useState('')
+  const [editingTaskDueDate, setEditingTaskDueDate] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
 
   const boardQuery = useQuery({
@@ -166,6 +264,11 @@ export function BoardPage() {
     })
     return map
   }, [columns, taskQueries])
+
+  const totalTasks = useMemo(
+    () => Array.from(tasksByColumn.values()).reduce((total, tasks) => total + tasks.length, 0),
+    [tasksByColumn],
+  )
 
   const createColumnMutation = useMutation({
     mutationFn: createColumn,
@@ -204,7 +307,7 @@ export function BoardPage() {
       setActionError(null)
       setTaskDrafts((current) => ({
         ...current,
-        [task.column_id]: { title: '', description: '' },
+        [task.column_id]: emptyTaskDraft,
       }))
       queryClient.invalidateQueries({
         queryKey: ['board', boardId, 'tasks', task.column_id],
@@ -220,6 +323,9 @@ export function BoardPage() {
       setEditingTask(null)
       setEditingTaskTitle('')
       setEditingTaskDescription('')
+      setEditingTaskPriority('normal')
+      setEditingTaskLabels('')
+      setEditingTaskDueDate('')
       queryClient.invalidateQueries({
         queryKey: ['board', boardId, 'tasks', task.column_id],
       })
@@ -249,8 +355,7 @@ export function BoardPage() {
     setTaskDrafts((current) => ({
       ...current,
       [columnId]: {
-        title: current[columnId]?.title ?? '',
-        description: current[columnId]?.description ?? '',
+        ...(current[columnId] ?? emptyTaskDraft),
         ...patch,
       },
     }))
@@ -276,6 +381,9 @@ export function BoardPage() {
       columnId,
       title,
       description: draft.description.trim(),
+      priority: draft.priority,
+      labels: parseLabels(draft.labels),
+      dueDate: draft.dueDate || undefined,
     })
   }
 
@@ -304,6 +412,9 @@ export function BoardPage() {
     setEditingTask(task)
     setEditingTaskTitle(task.title)
     setEditingTaskDescription(task.description)
+    setEditingTaskPriority(task.priority)
+    setEditingTaskLabels(labelsToText(task.labels))
+    setEditingTaskDueDate(task.due_date ?? '')
   }
 
   function submitTaskEdit(event: FormEvent<HTMLFormElement>) {
@@ -321,6 +432,9 @@ export function BoardPage() {
       taskId: editingTask.id,
       title,
       description: editingTaskDescription.trim(),
+      priority: editingTaskPriority,
+      labels: parseLabels(editingTaskLabels),
+      dueDate: editingTaskDueDate,
     })
   }
 
@@ -356,21 +470,36 @@ export function BoardPage() {
   }
 
   return (
-    <main className="page-shell">
-      <header className="topbar">
-        <div>
-          <p className="badge">BOARD VIEW</p>
+    <main className="page-shell board-page">
+      <header className="board-hero">
+        <div className="board-hero__content">
+          <Link className="back-link" to="/boards">
+            Назад к доскам
+          </Link>
+          <p className="badge">PREMIUM BOARD</p>
           <h1>{boardQuery.data?.name || 'Загрузка доски...'}</h1>
+          <p className="board-hero__subtitle">
+            Обновлена {formatBoardDate(boardQuery.data?.updated_at)}
+          </p>
+          <div className="board-hero__stats" aria-label="Статистика доски">
+            <div>
+              <strong>{columns.length}</strong>
+              <span>колонки</span>
+            </div>
+            <div>
+              <strong>{totalTasks}</strong>
+              <span>задачи</span>
+            </div>
+            <div>
+              <strong>{isBusy ? 'Идёт' : 'Готово'}</strong>
+              <span>статус</span>
+            </div>
+          </div>
         </div>
-        <Link className="ghost-button" to="/boards">
-          Назад к доскам
-        </Link>
-      </header>
-
-      <section className="panel">
-        <h2>Колонки</h2>
-        <form className="inline-form" onSubmit={submitCreateColumn}>
+        <form className="board-quick-add" onSubmit={submitCreateColumn}>
+          <label htmlFor="new-column-name">Новая колонка</label>
           <input
+            id="new-column-name"
             type="text"
             placeholder="Название колонки"
             value={newColumnName}
@@ -385,7 +514,7 @@ export function BoardPage() {
             Добавить колонку
           </button>
         </form>
-      </section>
+      </header>
 
       {actionError && <p className="error-text panel">{actionError}</p>}
       {boardQuery.isError && <p className="error-text panel">{getErrorMessage(boardQuery.error)}</p>}
@@ -395,18 +524,27 @@ export function BoardPage() {
 
       <DndContext onDragEnd={onDragEnd}>
         <section className="kanban-grid">
-          {columnsQuery.isLoading && <p className="panel">Загружаю колонки...</p>}
+          {columnsQuery.isLoading && (
+            <>
+              <ColumnSkeleton />
+              <ColumnSkeleton />
+              <ColumnSkeleton />
+            </>
+          )}
           {!columnsQuery.isLoading && columns.length === 0 && (
-            <p className="panel">Пока нет колонок. Добавь первую.</p>
+            <section className="board-empty-state">
+              <p className="badge">EMPTY BOARD</p>
+              <h2>Здесь пока чистый лист</h2>
+              <p>Добавь первую колонку в панели выше.</p>
+            </section>
           )}
           {columns.map((column, index) => (
             <ColumnCard
               key={column.id}
-              boardId={boardId}
               column={column}
               tasks={tasksByColumn.get(column.id) ?? []}
               taskLoading={Boolean(taskQueries[index]?.isLoading)}
-              draft={taskDrafts[column.id] ?? { title: '', description: '' }}
+              draft={taskDrafts[column.id] ?? emptyTaskDraft}
               busy={isBusy}
               onDraftChange={updateDraft}
               onCreateTask={submitCreateTask}
@@ -484,6 +622,36 @@ export function BoardPage() {
                 value={editingTaskDescription}
                 onChange={(event) => setEditingTaskDescription(event.target.value)}
               />
+              <div className="modal-form__meta">
+                <label>
+                  <span>Приоритет</span>
+                  <select
+                    value={editingTaskPriority}
+                    onChange={(event) => setEditingTaskPriority(event.target.value as TaskPriority)}
+                  >
+                    <option value="low">Низкий</option>
+                    <option value="normal">Обычный</option>
+                    <option value="high">Высокий</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Срок</span>
+                  <input
+                    type="date"
+                    value={editingTaskDueDate}
+                    onChange={(event) => setEditingTaskDueDate(event.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="modal-form__label">
+                <span>Метки</span>
+                <input
+                  type="text"
+                  value={editingTaskLabels}
+                  onChange={(event) => setEditingTaskLabels(event.target.value)}
+                  placeholder="frontend, urgent"
+                />
+              </label>
               <div className="modal-actions">
                 <button
                   type="button"
